@@ -61,10 +61,17 @@ class KalshiClient:
         await self._throttle()
         url = self.base_url + path
         headers = self.auth.sign_request(method, path)
-        resp = await self._http.request(method, url, headers=headers, **kwargs)
-        if not resp.is_success:
-            raise KalshiAPIError(resp.status_code, resp.text)
-        return resp.json() if resp.content else {}
+        for attempt in range(5):
+            resp = await self._http.request(method, url, headers=headers, **kwargs)
+            if resp.status_code == 429:
+                wait = 2.0 ** attempt
+                logger.warning(f"Rate limited on {path}, retrying in {wait:.0f}s (attempt {attempt + 1}/5)")
+                await asyncio.sleep(wait)
+                continue
+            if not resp.is_success:
+                raise KalshiAPIError(resp.status_code, resp.text)
+            return resp.json() if resp.content else {}
+        raise KalshiAPIError(429, f"Rate limit exhausted after 5 retries on {path}")
 
     # ── Market data ──────────────────────────────────────────────────────────
 

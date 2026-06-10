@@ -101,14 +101,17 @@ class BacktestEngine:
 
         for i, trade in enumerate(trades[self._WARMUP:], start=self._WARMUP):
             # ── Update fair value ─────────────────────────────────────────────
+            # Save prior FV before updating so quote/fill decisions use only
+            # information available before this trade (no lookahead bias).
+            prior_fv = fv
             fv = self._FV_ALPHA * trade.yes_price_cents + (1 - self._FV_ALPHA) * fv
-            vol_ema = self._FV_ALPHA * abs(trade.yes_price_cents - fv) + (1 - self._FV_ALPHA) * vol_ema
+            vol_ema = self._FV_ALPHA * abs(trade.yes_price_cents - prior_fv) + (1 - self._FV_ALPHA) * vol_ema
             recent_prices.append(float(trade.yes_price_cents))
             if len(recent_prices) > 20:
                 recent_prices.pop(0)
 
-            # ── Recompute quote ───────────────────────────────────────────────
-            p = fv / 100.0
+            # ── Recompute quote (from prior_fv, not updated fv) ───────────────
+            p = prior_fv / 100.0
             sigma_eff = math.sqrt(max(p * (1 - p), 1e-6))
 
             # Clamp position within max_position
@@ -117,7 +120,7 @@ class BacktestEngine:
 
             quote = self._mm.compute_quote(
                 ticker=ticker,
-                fair_value=fv,
+                fair_value=prior_fv,
                 sigma_eff=sigma_eff,
                 position=clamped_pos,
                 confidence=0.7,
@@ -135,14 +138,14 @@ class BacktestEngine:
                 if trade.taker_side == "no" and p_cents <= current_bid:
                     # Taker is selling YES (buying NO) → they hit our bid
                     if abs(position) < max_pos:
-                        ev_bid = self._ev.ev_buy_yes(float(current_bid), fv / 100.0)
+                        ev_bid = self._ev.ev_buy_yes(float(current_bid), prior_fv / 100.0)
                         fills.append(Fill(
                             ticker=ticker,
                             side="bid",
                             price_cents=current_bid,
                             count=min(trade.count, quote.bid_size if quote else 5),
                             timestamp=trade.timestamp,
-                            fv_at_fill=fv,
+                            fv_at_fill=prior_fv,
                             ev_at_fill=ev_bid,
                         ))
                         position += fills[-1].count
@@ -150,14 +153,14 @@ class BacktestEngine:
                 elif trade.taker_side == "yes" and p_cents >= current_ask:
                     # Taker is buying YES → they lift our ask
                     if abs(position) < max_pos:
-                        ev_ask = self._ev.ev_sell_yes(float(current_ask), fv / 100.0)
+                        ev_ask = self._ev.ev_sell_yes(float(current_ask), prior_fv / 100.0)
                         fills.append(Fill(
                             ticker=ticker,
                             side="ask",
                             price_cents=current_ask,
                             count=min(trade.count, quote.ask_size if quote else 5),
                             timestamp=trade.timestamp,
-                            fv_at_fill=fv,
+                            fv_at_fill=prior_fv,
                             ev_at_fill=ev_ask,
                         ))
                         position -= fills[-1].count
@@ -172,14 +175,14 @@ class BacktestEngine:
             if fill.side == "bid":
                 # We bought YES at fill_price, paid fee on the win
                 gross_profit = (resolution_price / 100.0 - fill_price) * count
-                fee = max(0.0, gross_profit) * self._fee_cfg.fee_rate * count + \
+                fee = max(0.0, gross_profit) * self._fee_cfg.fee_rate + \
                       self._fee_cfg.flat_fee_cents / 100.0 * count
                 after_fee = gross_profit - fee
                 tax = max(0.0, after_fee) * self._fee_cfg.marginal_tax_rate
             else:
                 # We sold YES at fill_price
                 gross_profit = (fill_price - resolution_price / 100.0) * count
-                fee = max(0.0, gross_profit) * self._fee_cfg.fee_rate * count + \
+                fee = max(0.0, gross_profit) * self._fee_cfg.fee_rate + \
                       self._fee_cfg.flat_fee_cents / 100.0 * count
                 after_fee = gross_profit - fee
                 tax = max(0.0, after_fee) * self._fee_cfg.marginal_tax_rate

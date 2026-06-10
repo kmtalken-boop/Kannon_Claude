@@ -79,8 +79,10 @@ class FairValueModel:
         half_spread = (ask - bid) / 2.0
 
         # ── Orderbook imbalance ───────────────────────────────────────────────
-        bid_depth = sum(lv.quantity for lv in ob.yes_bids[: self._depth_levels])
-        ask_depth = sum(lv.quantity for lv in ob.no_bids[: self._depth_levels])
+        # Use contract counts, not dollar values: at extreme prices a dollar
+        # buys far more contracts on one side than the other, biasing the signal.
+        bid_depth = sum(lv.contracts for lv in ob.yes_bids[: self._depth_levels])
+        ask_depth = sum(lv.contracts for lv in ob.no_bids[: self._depth_levels])
         total = bid_depth + ask_depth
         imbalance = (bid_depth - ask_depth) / total if total > 0 else 0.0
 

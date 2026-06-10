@@ -60,9 +60,12 @@ class OrderManager:
 
     async def cancel_all(self):
         async with self._lock:
-            tickers = list(self._quotes.keys())
-        for ticker in tickers:
-            await self.cancel_ticker(ticker)
+            for ticker in list(self._quotes.keys()):
+                mq = self._quotes.pop(ticker, None)
+                if mq:
+                    for resting in [mq.bid, mq.ask]:
+                        if resting:
+                            await self._cancel(resting.order_id)
 
     async def cancel_stale(self):
         """Cancel orders that have been resting longer than stale_ttl."""
@@ -81,6 +84,16 @@ class OrderManager:
         resting: Optional[_RestingOrder] = mq.bid if is_bid else mq.ask
         new_price = quote.bid_price if is_bid else quote.ask_price
         new_size = quote.bid_size if is_bid else quote.ask_size
+
+        # Size of 0 means this side has been suppressed (e.g. by risk limits) — cancel only
+        if new_size == 0:
+            if resting:
+                await self._cancel(resting.order_id)
+                if is_bid:
+                    mq.bid = None
+                else:
+                    mq.ask = None
+            return
 
         # No change needed
         if (

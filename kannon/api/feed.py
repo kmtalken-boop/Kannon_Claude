@@ -184,8 +184,9 @@ class MarketFeed:
         # yes_price in the trade channel may be an integer (cents) or dollar string
         try:
             price_val = float(price_str)
-            # Heuristic: if value > 1, it's already in cents; otherwise multiply by 100
-            price_cents = price_val if price_val > 1 else price_val * 100.0
+            # Kalshi sends cents as plain integers (no decimal) and dollars as
+            # decimal strings (e.g. "0.40").  Detect by decimal point presence.
+            price_cents = price_val * 100.0 if '.' in str(price_str) else price_val
             count = float(count_str)
         except (ValueError, TypeError):
             return None

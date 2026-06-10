@@ -5,6 +5,7 @@ import logging
 import os
 import signal
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -72,6 +73,8 @@ class KalshiBot:
 
         self._positions: dict[str, int] = {}
         self._active_tickers: list[str] = []
+        self._market_close_times: dict[str, datetime] = {}
+        self._prev_realized_pnl: dict[str, float] = {}
         self._running = False
 
         self._client: KalshiClient | None = None
@@ -122,11 +125,21 @@ class KalshiBot:
         )
 
         if quote:
+            # Risk-gate each side: suppress if adding more contracts would breach limits
+            bid_ok, bid_reason = self._risk.check_order(ticker, quote.bid_size, self._positions)
+            ask_ok, ask_reason = self._risk.check_order(ticker, -quote.ask_size, self._positions)
+            if not bid_ok:
+                logger.debug(f"Risk suppressed bid on {ticker}: {bid_reason}")
+                quote.bid_size = 0
+            if not ask_ok:
+                logger.debug(f"Risk suppressed ask on {ticker}: {ask_reason}")
+                quote.ask_size = 0
+
             logger.debug(
                 f"{ticker}: fv={fv_result.fair_value:.1f}¢ "
                 f"bid={quote.bid_price}¢ ask={quote.ask_price}¢ "
                 f"ev_bid={quote.ev_bid*100:.2f}¢ ev_ask={quote.ev_ask*100:.2f}¢ "
-                f"vpin={vpin.value:.2f if vpin else 0:.2f}"
+                f"vpin={vpin.value if vpin else 0:.2f}"
             )
             await self._orders.update(quote)
 
@@ -146,24 +159,38 @@ class KalshiBot:
         vpin.on_trade(event.price_cents, event.count, mid)
 
     def _time_remaining(self, ticker: str) -> float:
-        """Normalised time remaining [0,1]. TODO: populate from market close_time."""
-        return 1.0
+        """Normalised time remaining [0,1] based on stored market close_time."""
+        close_time = self._market_close_times.get(ticker)
+        if close_time is None:
+            return 1.0
+        if close_time.tzinfo is None:
+            close_time = close_time.replace(tzinfo=timezone.utc)
+        remaining_secs = (close_time - datetime.now(timezone.utc)).total_seconds()
+        if remaining_secs <= 0:
+            return self._mm._t_min
+        # Treat 24h+ as T=1.0; scale linearly from there down to t_min
+        t = min(1.0, remaining_secs / 86400.0)
+        return max(self._mm._t_min, t)
 
     # ── Loops ─────────────────────────────────────────────────────────────────
 
     async def _market_refresh_loop(self):
         interval = self._cfg["screening"].get("market_refresh_interval_seconds", 300)
         while self._running:
+            await asyncio.sleep(interval)
+            if not self._running:
+                break
             try:
                 await self._refresh_markets()
             except Exception as exc:
                 logger.error(f"Market refresh error: {exc}", exc_info=True)
-            await asyncio.sleep(interval)
 
     async def _position_sync_loop(self):
         interval = self._cfg["market_making"].get("position_sync_interval_seconds", 30)
         while self._running:
             await asyncio.sleep(interval)
+            if not self._running:
+                break
             try:
                 await self._sync_positions()
             except Exception as exc:
@@ -176,6 +203,8 @@ class KalshiBot:
         ttl = self._cfg["market_making"].get("stale_quote_ttl_seconds", 30)
         while self._running:
             await asyncio.sleep(ttl)
+            if not self._running:
+                break
             try:
                 await self._orders.cancel_stale()
             except Exception as exc:
@@ -188,11 +217,17 @@ class KalshiBot:
         selected = self._screener.select(all_markets)
         new_tickers = [m.ticker for m in selected]
 
+        # Store close times for time_remaining computation
+        for m in selected:
+            if m.close_time:
+                self._market_close_times[m.ticker] = m.close_time
+
         old, new = set(self._active_tickers), set(new_tickers)
         for t in (old - new):
             await self._orders.cancel_ticker(t)
             self._ofi.pop(t, None)
             self._vpin.pop(t, None)
+            self._market_close_times.pop(t, None)
         if old - new:
             await self._feed.unsubscribe(list(old - new))
         if new - old:
@@ -212,6 +247,15 @@ class KalshiBot:
         positions = await self._client.get_positions()
         self._positions = {p.ticker: p.market_exposure for p in positions}
         self._risk.update_delta(self._positions)
+
+        # Track realized P&L deltas to keep the risk manager's daily loss limit live
+        for p in positions:
+            prev = self._prev_realized_pnl.get(p.ticker, 0.0)
+            delta = (p.realized_pnl or 0.0) - prev
+            if delta != 0.0:
+                self._risk.record_pnl(delta)
+            self._prev_realized_pnl[p.ticker] = p.realized_pnl or 0.0
+
         balance = await self._client.get_balance()
         risk = self._risk.summary()
         logger.info(
@@ -220,6 +264,23 @@ class KalshiBot:
             f"Daily P&L: ${risk['daily_pnl']:.2f} | "
             f"Delta: {risk['total_delta']}"
         )
+
+    async def _reconcile_open_orders(self):
+        """Cancel any resting orders left over from a previous bot instance."""
+        try:
+            open_orders = await self._client.get_orders(status="resting")
+            if open_orders:
+                console.print(
+                    f"[yellow]Reconciling {len(open_orders)} stale resting order(s) "
+                    f"from previous run...[/yellow]"
+                )
+                for order in open_orders:
+                    try:
+                        await self._client.cancel_order(order.order_id)
+                    except Exception as exc:
+                        logger.warning(f"Failed to cancel stale order {order.order_id}: {exc}")
+        except Exception as exc:
+            logger.warning(f"Order reconciliation failed: {exc}")
 
     def _print_market_table(self, markets):
         table = Table(title=f"Active Markets ({len(markets)})", show_lines=False)
@@ -265,6 +326,7 @@ class KalshiBot:
 
             await self._refresh_markets()
             await self._sync_positions()
+            await self._reconcile_open_orders()
 
             await asyncio.gather(
                 self._feed.run(),
