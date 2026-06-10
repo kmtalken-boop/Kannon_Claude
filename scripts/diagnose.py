@@ -65,6 +65,21 @@ async def main():
                   f"vol24h_fp={raw.get('volume_24h_fp')}  oi_fp={raw.get('open_interest_fp')}")
         print()
 
+        # ── Raw order response keys ─────────────────────────────────────
+        print("── Raw GET /portfolio/orders response keys ──")
+        try:
+            raw_orders = await client._request("GET", "/portfolio/orders",
+                                               params={"status": "resting"})
+            orders = raw_orders.get("orders", [])
+            if orders:
+                print(f"  keys: {sorted(orders[0].keys())}")
+                print(f"  first order: {orders[0]}")
+            else:
+                print("  (no resting orders — place one first)")
+        except Exception as e:
+            print(f"  FAILED: {e}")
+        print()
+
         # ── Settled market fields ───────────────────────────────────────
         print("── Sample settled markets ──")
         data = await client._request("GET", "/markets", params={"status": "settled", "limit": 5})

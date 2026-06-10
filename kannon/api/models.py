@@ -22,10 +22,15 @@ class OrderType(str, Enum):
 
 class OrderStatus(str, Enum):
     RESTING = "resting"
+    OPEN = "open"           # alias used by some API versions
     PENDING = "pending"
     CANCELLED = "cancelled"
+    CANCELED = "canceled"   # alternate spelling
     EXECUTED = "executed"
+    FILLED = "filled"       # alias for executed
     PARTIALLY_FILLED = "partially_filled"
+    CLOSED = "closed"
+    EXPIRED = "expired"
 
 
 class MarketStatus(str, Enum):
@@ -144,15 +149,17 @@ class Orderbook(BaseModel):
 
 
 class Order(BaseModel):
-    order_id: str
-    ticker: str
-    side: Side
-    action: OrderAction
-    type: OrderType
-    yes_price: int              # cents
+    model_config = {"extra": "ignore"}
+
+    order_id: str = ""
+    ticker: str = ""
+    side: Optional[Side] = None
+    action: Optional[OrderAction] = None
+    type: Optional[OrderType] = None
+    yes_price: int = 0              # cents
     count: int = 0
     remaining_count: int = 0
-    status: OrderStatus
+    status: Optional[OrderStatus] = None
     created_time: Optional[datetime] = None
     updated_time: Optional[datetime] = None
 
@@ -161,13 +168,23 @@ class Order(BaseModel):
     def _remap_fp_fields(cls, data: dict) -> dict:
         if not isinstance(data, dict):
             return data
-        if data.get("yes_price") is None:
+        # yes_price_dollars: "0.6500" (probability) → yes_price: 65 (cents)
+        if not data.get("yes_price"):
             raw = data.get("yes_price_dollars")
             if raw is not None:
                 data["yes_price"] = int(round(float(raw) * 100))
-        # API may omit count; fall back to remaining_count (equal on fresh placement)
+        # API may omit original count; remaining_count equals count on fresh order
         if not data.get("count"):
-            data["count"] = data.get("remaining_count", 0)
+            rc = data.get("remaining_count_fp") or data.get("remaining_count")
+            data["count"] = int(float(rc)) if rc else 0
+        # Normalise remaining_count from _fp variant
+        if not data.get("remaining_count"):
+            raw = data.get("remaining_count_fp")
+            if raw is not None:
+                data["remaining_count"] = int(float(raw))
+        # Coerce unknown status values to a safe fallback
+        if data.get("status") and data["status"] not in {s.value for s in OrderStatus}:
+            data["status"] = "resting"
         return data
 
 
