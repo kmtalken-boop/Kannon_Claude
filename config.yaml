@@ -102,10 +102,13 @@ market_making:
   position_sync_interval_seconds: 30
 
 # ── Risk Management ───────────────────────────────────────────────────────────
+# max_daily_loss_dollars: halt if mark-to-market equity drops more than this
+# from session start. Set to ~10-15% of account balance.
+# With $28 demo balance → $4 limit = ~14% drawdown before halt.
 risk:
-  max_daily_loss_dollars: 50.0
-  max_single_market_contracts: 50
-  max_total_delta_contracts: 200
+  max_daily_loss_dollars: 4.0
+  max_single_market_contracts: 10
+  max_total_delta_contracts: 50
   halt_on_daily_loss: true
 
 # ── Arb Scanner ───────────────────────────────────────────────────────────────

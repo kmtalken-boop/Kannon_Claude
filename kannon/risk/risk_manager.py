@@ -41,8 +41,23 @@ class RiskManager:
 
         return True, ""
 
+    def set_daily_pnl(self, pnl: float):
+        """
+        Set daily P&L directly from an external mark-to-market equity calculation.
+        More accurate than record_pnl() deltas because it captures settlement losses
+        that the API's realized_pnl_dollars field omits.
+        """
+        self.status.daily_pnl = pnl
+        if self._halt_on_loss and pnl < -self._max_daily_loss:
+            if self.status.trading_enabled:
+                self.status.trading_enabled = False
+                self.status.halt_reason = (
+                    f"daily loss limit hit (${-pnl:.2f} > ${self._max_daily_loss:.2f})"
+                )
+                logger.critical(f"RISK HALT: {self.status.halt_reason}")
+
     def record_pnl(self, delta: float):
-        """Call whenever a fill generates realized P&L."""
+        """Accumulate realized P&L delta. Prefer set_daily_pnl() when equity tracking is available."""
         today = date.today()
         if today != self.status.daily_start:
             self.status.daily_pnl = 0.0

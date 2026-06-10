@@ -84,10 +84,12 @@ class FairValueModel:
         half_spread = (ask - bid) / 2.0
 
         # ── Orderbook imbalance ───────────────────────────────────────────────
-        # Use contract counts, not dollar values: at extreme prices a dollar
-        # buys far more contracts on one side than the other, biasing the signal.
-        bid_depth = sum(lv.contracts for lv in ob.yes_bids[: self._depth_levels])
-        ask_depth = sum(lv.contracts for lv in ob.no_bids[: self._depth_levels])
+        # Use dollar depth (raw quantity from API) for both sides so the comparison
+        # is like-for-like. Contract counts create a spurious bias: at 40¢, equal
+        # dollar depth yields 2.5 YES contracts vs 1.67 NO contracts, giving a fake
+        # bullish signal just because YES is cheaper per contract.
+        bid_depth = sum(lv.quantity for lv in ob.yes_bids[: self._depth_levels])
+        ask_depth = sum(lv.quantity for lv in ob.no_bids[: self._depth_levels])
         total = bid_depth + ask_depth
         imbalance = (bid_depth - ask_depth) / total if total > 0 else 0.0
 

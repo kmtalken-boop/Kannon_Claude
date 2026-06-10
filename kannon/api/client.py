@@ -93,11 +93,12 @@ class KalshiClient:
         markets = [Market(**m) for m in data.get("markets", [])]
         return markets, data.get("cursor")
 
-    async def get_all_open_markets(self, max_pages: int = 8) -> list[Market]:
-        """Fetch open markets up to max_pages × 200 = 1,600 candidates.
+    async def get_all_open_markets(self, max_pages: int = 20) -> list[Market]:
+        """Fetch open markets up to max_pages × 200 = 4,000 candidates.
 
-        The demo API has thousands of markets; fetching all of them burns
-        the rate limit on startup.  1,600 is more than enough for screening.
+        The demo API has 77K+ markets. 20 pages at 2 rps = ~10 seconds on
+        startup, which is acceptable. Raising from 8 to 20 pages to catch
+        weather, commodity, and macro markets that appear deeper in the list.
         """
         markets: list[Market] = []
         cursor: Optional[str] = None

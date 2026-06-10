@@ -5,7 +5,7 @@ import logging
 import os
 import signal
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -74,7 +74,9 @@ class KalshiBot:
         self._positions: dict[str, int] = {}
         self._active_tickers: list[str] = []
         self._market_close_times: dict[str, datetime] = {}
-        self._prev_realized_pnl: dict[str, float] = {}
+        # Equity-based daily P&L tracking (replaces broken realized_pnl delta approach)
+        self._equity_date: date = date.min   # forces reset on first sync
+        self._daily_start_equity: float = 0.0
         self._running = False
 
         self._client: KalshiClient | None = None
@@ -250,20 +252,32 @@ class KalshiBot:
         self._positions = {p.ticker: p.market_exposure for p in positions}
         self._risk.update_delta(self._positions)
 
-        # Track realized P&L deltas to keep the risk manager's daily loss limit live
-        for p in positions:
-            prev = self._prev_realized_pnl.get(p.ticker, 0.0)
-            delta = (p.realized_pnl or 0.0) - prev
-            if delta != 0.0:
-                self._risk.record_pnl(delta)
-            self._prev_realized_pnl[p.ticker] = p.realized_pnl or 0.0
-
         balance = await self._client.get_balance()
+
+        # Mark-to-market equity = cash + estimated unrealized position value.
+        # Uses FairValueModel's last computed FV per ticker (50¢ prior for unknown markets).
+        # This captures settlement losses that the API's realized_pnl_dollars field omits —
+        # Kalshi only populates that field for explicit sells, not contract expirations.
+        pos_value = sum(
+            pos * self._fv_model._last_fv.get(ticker, 50.0) / 100.0
+            for ticker, pos in self._positions.items()
+        )
+        equity = balance.balance_dollars + pos_value
+
+        today = date.today()
+        if today != self._equity_date:
+            self._equity_date = today
+            self._daily_start_equity = equity   # baseline for the session
+
+        daily_pnl = equity - self._daily_start_equity
+        self._risk.set_daily_pnl(daily_pnl)
+
         risk = self._risk.summary()
         logger.info(
             f"Balance: ${balance.balance_dollars:.2f} | "
+            f"Equity: ${equity:.2f} | "
+            f"Daily P&L: ${daily_pnl:+.2f} | "
             f"Markets: {len(self._active_tickers)} | "
-            f"Daily P&L: ${risk['daily_pnl']:.2f} | "
             f"Delta: {risk['total_delta']}"
         )
 
