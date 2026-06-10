@@ -2,7 +2,7 @@ kalshi:
   environment: demo
   base_url: https://demo-api.kalshi.co/trade-api/v2
   ws_url: wss://demo-api.kalshi.co/trade-api/ws/v2
-  rate_limit_rps: 10
+  rate_limit_rps: 2
 
 # ── Polymarket US ──────────────────────────────────────────────────────────────
 # Credentials: generate at polymarket.us/developer (requires KYC via iOS app).

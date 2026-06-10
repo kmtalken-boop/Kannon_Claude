@@ -91,10 +91,15 @@ class KalshiClient:
         markets = [Market(**m) for m in data.get("markets", [])]
         return markets, data.get("cursor")
 
-    async def get_all_open_markets(self) -> list[Market]:
+    async def get_all_open_markets(self, max_pages: int = 8) -> list[Market]:
+        """Fetch open markets up to max_pages × 200 = 1,600 candidates.
+
+        The demo API has thousands of markets; fetching all of them burns
+        the rate limit on startup.  1,600 is more than enough for screening.
+        """
         markets: list[Market] = []
         cursor: Optional[str] = None
-        while True:
+        for _ in range(max_pages):
             batch, cursor = await self.get_markets(cursor=cursor)
             markets.extend(batch)
             if not cursor:
