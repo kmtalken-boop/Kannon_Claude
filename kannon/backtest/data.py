@@ -73,13 +73,13 @@ class HistoricalDataLoader:
 
         for _ in range(max_pages):
             batch, cursor = await self._client.get_markets(
-                status="settled", limit=200, cursor=cursor,
+                status="finalized", limit=200, cursor=cursor,
             )
             if not batch:
                 break
 
             def _within_window(m: Market) -> bool:
-                if m.result not in ("yes", "no") or m.last_price is None:
+                if m.result not in ("yes", "no"):
                     return False
                 if m.close_time is None:
                     return True
