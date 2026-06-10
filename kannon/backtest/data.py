@@ -71,7 +71,7 @@ def _synthetic_trades(
     theta, sigma = 0.10, 1.5
     price = 50.0 + rng.gauss(0, 2)
     trades = []
-    phase_boundary = 0.92
+    phase_boundary = 0.97  # 97% uncertainty, 3% resolution drift (≈ last 5 trades)
 
     for i in range(n_trades):
         t_frac = i / n_trades
