@@ -42,6 +42,8 @@ class FairValueModel:
         self._sigma_base: float = cfg.get("sigma_base", 1.0)
         # Per-ticker mid history for rolling vol estimation
         self._mid_history: dict[str, deque] = {}
+        # Last computed FV per ticker — used as fallback on empty books
+        self._last_fv: dict[str, float] = {}
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -69,7 +71,10 @@ class FairValueModel:
         ask = ob.best_yes_ask_cents
 
         if bid is None and ask is None:
-            return None
+            # Empty book — use last known FV or 50¢ prior; zero confidence so the
+            # strategy falls back to its configured target_half_spread_cents.
+            fallback = self._last_fv.get(ob.ticker, 50.0)
+            return self._empty_book(fallback, ob.ticker)
         if bid is None:
             return self._one_sided(ask, "ask", ob.ticker)
         if ask is None:
@@ -115,6 +120,7 @@ class FairValueModel:
         spread_penalty = max(0.0, 1.0 - half_spread / 25.0)
         confidence = depth_score * spread_penalty
 
+        self._last_fv[ob.ticker] = blended_fv
         return FVResult(
             fair_value=blended_fv,
             confidence=confidence,
@@ -127,6 +133,21 @@ class FairValueModel:
         )
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _empty_book(self, fv: float, ticker: str) -> FVResult:
+        """Zero-information FV when orderbook is empty; confidence=0 → target spread."""
+        p = fv / 100.0
+        sigma_eff = self._sigma_base * math.sqrt(max(p * (1 - p), 1e-6))
+        return FVResult(
+            fair_value=fv,
+            confidence=0.0,
+            mid=fv,
+            imbalance=0.0,
+            volatility_cents=0.0,
+            sigma_eff=sigma_eff,
+            ofi_adjustment=0.0,
+            external_anchor=None,
+        )
 
     def _one_sided(self, price: float, side: str, ticker: str) -> FVResult:
         p = price / 100.0

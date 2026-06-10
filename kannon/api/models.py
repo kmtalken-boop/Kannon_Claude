@@ -1,5 +1,5 @@
 from __future__ import annotations
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime
 from enum import Enum
@@ -49,6 +49,39 @@ class Market(BaseModel):
     close_time: Optional[datetime] = None
     result: Optional[str] = None
     category: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _remap_fp_fields(cls, data: dict) -> dict:
+        """Map the demo API's _dollars/_fp field names to our canonical fields."""
+        if not isinstance(data, dict):
+            return data
+
+        def _to_cents(v) -> Optional[int]:
+            """Probability 0.0–1.0 string → integer cents; None/empty → None."""
+            if v is None or v == "":
+                return None
+            c = int(round(float(v) * 100))
+            return c if c > 0 else None
+
+        def _fp_int(v) -> int:
+            if v is None or v == "":
+                return 0
+            return int(float(v))
+
+        if data.get("yes_bid") is None:
+            data["yes_bid"] = _to_cents(data.get("yes_bid_dollars"))
+        if data.get("yes_ask") is None:
+            data["yes_ask"] = _to_cents(data.get("yes_ask_dollars"))
+        if not data.get("volume_24h"):
+            data["volume_24h"] = _fp_int(data.get("volume_24h_fp"))
+        if not data.get("volume"):
+            data["volume"] = _fp_int(data.get("volume_fp"))
+        if not data.get("open_interest"):
+            data["open_interest"] = _fp_int(data.get("open_interest_fp"))
+        if data.get("last_price") is None:
+            data["last_price"] = _to_cents(data.get("last_price_dollars"))
+        return data
 
     @property
     def mid_price(self) -> Optional[float]:

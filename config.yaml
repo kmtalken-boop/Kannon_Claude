@@ -28,7 +28,7 @@ fees:
 # ── Market Screening ──────────────────────────────────────────────────────────
 screening:
   min_volume_24h: 0           # demo markets have minimal volume — screen by OI/spread only
-  min_open_interest: 1
+  min_open_interest: 0
   max_time_to_expiry_days: 30
   min_spread_cents: 2
   max_markets_active: 10
