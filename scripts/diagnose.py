@@ -80,6 +80,20 @@ async def main():
             print(f"  FAILED: {e}")
         print()
 
+        # ── Raw positions response ──────────────────────────────────────
+        print("── Raw GET /portfolio/positions ──")
+        try:
+            raw_pos = await client._request("GET", "/portfolio/positions")
+            positions = raw_pos.get("market_positions", [])
+            if positions:
+                print(f"  keys: {sorted(positions[0].keys())}")
+                print(f"  first: {positions[0]}")
+            else:
+                print("  (no open positions)")
+        except Exception as e:
+            print(f"  FAILED: {e}")
+        print()
+
         # ── Settled market fields ───────────────────────────────────────
         print("── Sample settled markets ──")
         data = await client._request("GET", "/markets", params={"status": "settled", "limit": 5})

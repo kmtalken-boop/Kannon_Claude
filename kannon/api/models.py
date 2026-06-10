@@ -168,16 +168,19 @@ class Order(BaseModel):
     def _remap_fp_fields(cls, data: dict) -> dict:
         if not isinstance(data, dict):
             return data
-        # yes_price_dollars: "0.6500" (probability) → yes_price: 65 (cents)
+        # yes_price_dollars: "0.3700" (probability string) → yes_price: 37 (cents)
         if not data.get("yes_price"):
             raw = data.get("yes_price_dollars")
             if raw is not None:
                 data["yes_price"] = int(round(float(raw) * 100))
-        # API may omit original count; remaining_count equals count on fresh order
+        # initial_count_fp: "1.00" → count (original order quantity)
         if not data.get("count"):
-            rc = data.get("remaining_count_fp") or data.get("remaining_count")
-            data["count"] = int(float(rc)) if rc else 0
-        # Normalise remaining_count from _fp variant
+            for key in ("initial_count_fp", "remaining_count_fp", "remaining_count"):
+                raw = data.get(key)
+                if raw:
+                    data["count"] = int(float(raw))
+                    break
+        # remaining_count_fp: "1.00" → remaining_count
         if not data.get("remaining_count"):
             raw = data.get("remaining_count_fp")
             if raw is not None:
@@ -189,11 +192,30 @@ class Order(BaseModel):
 
 
 class Position(BaseModel):
+    model_config = {"extra": "ignore"}
+
     ticker: str
     # Positive = net long YES, negative = net short YES
     market_exposure: int = 0
     fees_paid: float = 0.0
     realized_pnl: float = 0.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _remap_fp_fields(cls, data: dict) -> dict:
+        if not isinstance(data, dict):
+            return data
+        if not data.get("market_exposure"):
+            for key in ("market_exposure_fp", "position", "net_position"):
+                raw = data.get(key)
+                if raw is not None:
+                    data["market_exposure"] = int(float(raw))
+                    break
+        if not data.get("realized_pnl"):
+            raw = data.get("realized_pnl_dollars") or data.get("realized_pnl_fp")
+            if raw is not None:
+                data["realized_pnl"] = float(raw)
+        return data
 
 
 class Balance(BaseModel):
