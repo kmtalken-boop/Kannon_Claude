@@ -69,7 +69,7 @@ market_making:
   t_min: 0.05                 # floor on T to prevent spread collapse near expiry
 
   # Sizing
-  default_size_contracts: 5
+  default_size_contracts: 1
   max_position_contracts: 50
   inventory_skew_factor: 0.15
 

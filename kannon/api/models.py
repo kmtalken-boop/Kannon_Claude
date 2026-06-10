@@ -150,11 +150,25 @@ class Order(BaseModel):
     action: OrderAction
     type: OrderType
     yes_price: int              # cents
-    count: int
+    count: int = 0
     remaining_count: int = 0
     status: OrderStatus
     created_time: Optional[datetime] = None
     updated_time: Optional[datetime] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _remap_fp_fields(cls, data: dict) -> dict:
+        if not isinstance(data, dict):
+            return data
+        if data.get("yes_price") is None:
+            raw = data.get("yes_price_dollars")
+            if raw is not None:
+                data["yes_price"] = int(round(float(raw) * 100))
+        # API may omit count; fall back to remaining_count (equal on fresh placement)
+        if not data.get("count"):
+            data["count"] = data.get("remaining_count", 0)
+        return data
 
 
 class Position(BaseModel):
