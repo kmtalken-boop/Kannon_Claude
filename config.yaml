@@ -4,6 +4,14 @@ kalshi:
   ws_url: wss://demo-api.kalshi.co/trade-api/ws/v2
   rate_limit_rps: 10
 
+# ── Polymarket US ──────────────────────────────────────────────────────────────
+# Credentials: generate at polymarket.us/developer (requires KYC via iOS app).
+# Keys stored in .env as POLYMARKET_KEY_ID and POLYMARKET_SECRET_KEY.
+polymarket:
+  base_url: https://gateway.polymarket.us
+  ws_url: wss://gateway.polymarket.us/v1/ws/markets
+  rate_limit_rps: 1.0           # 60 req/min public limit → 1/s to stay safe
+
 # ── Fees & Taxes ──────────────────────────────────────────────────────────────
 # IMPORTANT: Kalshi charges ~7% of gross profit on winning contracts.
 # Tax treatment: currently treated as ordinary income in the US — not capital gains.
