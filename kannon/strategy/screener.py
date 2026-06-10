@@ -69,7 +69,7 @@ class MarketScreener:
             else:
                 rejected += 1
 
-        candidates.sort(reverse=True)
+        candidates.sort(key=lambda x: x[0], reverse=True)
         selected = [m for _, m in candidates[: self.max_active]]
         logger.info(
             f"Screened {len(markets)} markets: {len(selected)} selected, {rejected} rejected"
