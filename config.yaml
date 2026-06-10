@@ -110,7 +110,9 @@ market_making:
 risk:
   max_daily_loss_dollars: 4.0
   max_single_market_contracts: 10
-  max_total_delta_contracts: 50
+  # Sized for demo: old sports short positions can tie up 30-50 delta during
+  # settlement. 100 lets new weather market quotes through while they clear.
+  max_total_delta_contracts: 100
   halt_on_daily_loss: true
 
 # ── Arb Scanner ───────────────────────────────────────────────────────────────

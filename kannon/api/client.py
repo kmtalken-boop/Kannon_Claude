@@ -70,10 +70,15 @@ class KalshiClient:
                 logger.warning(f"Rate limited on {path}, retrying in {wait:.0f}s (attempt {attempt + 1}/5)")
                 await asyncio.sleep(wait)
                 continue
+            if resp.status_code == 503:
+                wait = 2.0 ** attempt
+                logger.warning(f"Exchange unavailable on {path}, retrying in {wait:.0f}s (attempt {attempt + 1}/5)")
+                await asyncio.sleep(wait)
+                continue
             if not resp.is_success:
                 raise KalshiAPIError(resp.status_code, resp.text)
             return resp.json() if resp.content else {}
-        raise KalshiAPIError(429, f"Rate limit exhausted after 5 retries on {path}")
+        raise KalshiAPIError(503, f"Exchange unavailable after 5 retries on {path}")
 
     # ── Market data ──────────────────────────────────────────────────────────
 
