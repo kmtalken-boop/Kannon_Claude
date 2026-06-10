@@ -116,6 +116,17 @@ async def run_backtest(args: argparse.Namespace):
             if result:
                 results.append(result)
 
+        # Count synthetic markets (trade IDs start with "syn-")
+        synthetic_count = sum(
+            1 for t_list in all_trades.values()
+            if t_list and t_list[0].trade_id.startswith("syn-")
+        )
+        if synthetic_count:
+            console.print(
+                f"[yellow]Note: {synthetic_count} of {len(markets)} markets used synthetic "
+                "trade data (demo API has no trade history for quick-settle markets).[/yellow]"
+            )
+
         if skipped:
             console.print(f"[dim]Skipped {skipped} markets with < {args.min_trades} trades.[/dim]")
 
