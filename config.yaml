@@ -1,0 +1,49 @@
+kalshi:
+  environment: demo
+  base_url: https://demo-api.kalshi.co/trade-api/v2
+  ws_url: wss://demo-api.kalshi.co/trade-api/ws/v2
+  rate_limit_rps: 10          # stay under the Basic tier 10 writes/sec limit
+
+screening:
+  min_volume_24h: 100         # minimum 24h volume in contracts
+  min_open_interest: 50       # minimum open interest in contracts
+  max_time_to_expiry_days: 30 # don't quote markets expiring too far out
+  min_spread_cents: 2         # skip already-tight markets
+  max_markets_active: 10      # max concurrent markets to quote
+  min_price_cents: 3          # skip near-certain outcomes (< 3¢ from 0 or 100)
+  market_refresh_interval_seconds: 300
+
+fair_value:
+  imbalance_weight: 0.3       # how much orderbook imbalance shifts the mid
+  depth_levels: 5             # how many levels to consider for imbalance
+  volatility_lookback: 20     # ticks for rolling volatility estimate
+
+market_making:
+  # Spread control
+  target_half_spread_cents: 2.0   # base half-spread (edge per side)
+  min_half_spread_cents: 1.0
+  max_half_spread_cents: 15.0
+
+  # Avellaneda-Stoikov parameters
+  risk_aversion: 0.1          # γ: higher = wider spreads for same inventory
+  order_depth_k: 1.5          # k: market depth parameter (higher = tighter quotes)
+
+  # Sizing
+  default_size_contracts: 5
+  max_position_contracts: 50  # per market
+  inventory_skew_factor: 0.15 # how aggressively to skew for inventory
+
+  # Timing
+  quote_refresh_interval_seconds: 5
+  position_sync_interval_seconds: 30
+  stale_quote_ttl_seconds: 30
+
+risk:
+  max_daily_loss_dollars: 50.0
+  max_single_market_contracts: 50
+  max_total_delta_contracts: 200  # sum of absolute positions across markets
+  halt_on_daily_loss: true
+
+logging:
+  level: INFO
+  file: logs/kannon.log
