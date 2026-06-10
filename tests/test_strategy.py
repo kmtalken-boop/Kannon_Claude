@@ -51,8 +51,8 @@ class TestFairValue:
 class TestMarketMaker:
     def setup_method(self):
         self.mm = MarketMakerStrategy({
-            "risk_aversion": 0.1,
-            "order_depth_k": 1.5,
+            "risk_aversion": 0.01,
+            "order_depth_k": 50.0,
             "target_half_spread_cents": 2.0,
             "min_half_spread_cents": 1.0,
             "max_half_spread_cents": 15.0,
@@ -62,28 +62,32 @@ class TestMarketMaker:
         })
 
     def test_zero_inventory_symmetric(self):
-        q = self.mm.compute_quote("X", fair_value=50.0, position=0, volatility=0.0, confidence=1.0)
+        # sigma_eff at p=50%: sqrt(0.5*0.5) = 0.25
+        q = self.mm.compute_quote("X", fair_value=50.0, sigma_eff=0.25, position=0, confidence=1.0)
         assert q is not None
         assert q.bid_price < q.ask_price
-        # Should be symmetric around 50
+        # Symmetric quotes around 50¢ with zero inventory
         assert abs((q.bid_price + q.ask_price) / 2 - 50) <= 1
 
     def test_long_inventory_skews_down(self):
-        q_flat = self.mm.compute_quote("X", 50.0, 0, 0.0, 1.0)
-        q_long = self.mm.compute_quote("X", 50.0, 30, 0.0, 1.0)
+        q_flat = self.mm.compute_quote("X", fair_value=50.0, sigma_eff=0.25, position=0, confidence=1.0)
+        q_long = self.mm.compute_quote("X", fair_value=50.0, sigma_eff=0.25, position=30, confidence=1.0)
         assert q_long is not None
-        # Reservation price should be lower when long
+        # Reservation price should be lower when long (skewing toward selling)
         assert q_long.reservation_price < q_flat.reservation_price
 
     def test_quotes_always_in_valid_range(self):
+        import math
         for fv in [5, 20, 50, 80, 95]:
+            p = fv / 100.0
+            sigma_eff = math.sqrt(p * (1 - p))
             for pos in [-40, 0, 40]:
-                q = self.mm.compute_quote("X", float(fv), pos, 0.5, 0.8)
+                q = self.mm.compute_quote("X", float(fv), sigma_eff, pos, 0.8)
                 if q:
                     assert 1 <= q.bid_price <= 98
                     assert 2 <= q.ask_price <= 99
                     assert q.ask_price > q.bid_price
 
     def test_no_quote_at_extremes(self):
-        assert self.mm.compute_quote("X", 0.0, 0, 0.0, 1.0) is None
-        assert self.mm.compute_quote("X", 100.0, 0, 0.0, 1.0) is None
+        assert self.mm.compute_quote("X", 0.0, 0.0, 0, 1.0) is None
+        assert self.mm.compute_quote("X", 100.0, 0.0, 0, 1.0) is None

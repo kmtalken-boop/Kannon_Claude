@@ -2,48 +2,82 @@ kalshi:
   environment: demo
   base_url: https://demo-api.kalshi.co/trade-api/v2
   ws_url: wss://demo-api.kalshi.co/trade-api/ws/v2
-  rate_limit_rps: 10          # stay under the Basic tier 10 writes/sec limit
+  rate_limit_rps: 10
 
+# ── Fees & Taxes ──────────────────────────────────────────────────────────────
+# IMPORTANT: Kalshi charges ~7% of gross profit on winning contracts.
+# Tax treatment: currently treated as ordinary income in the US — not capital gains.
+# Set marginal_tax_rate to your effective federal + state rate (e.g. 0.35 for 35%).
+# Verify with a tax professional; tax rules for prediction markets are evolving.
+fees:
+  fee_rate: 0.07              # 7% of gross profit on the winning side
+  marginal_tax_rate: 0.0      # Set your rate (0.0 = ignore taxes in EV calc)
+  flat_fee_cents: 0.0         # Per-contract flat fee (usually 0 on Kalshi)
+
+# ── Market Screening ──────────────────────────────────────────────────────────
 screening:
-  min_volume_24h: 100         # minimum 24h volume in contracts
-  min_open_interest: 50       # minimum open interest in contracts
-  max_time_to_expiry_days: 30 # don't quote markets expiring too far out
-  min_spread_cents: 2         # skip already-tight markets
-  max_markets_active: 10      # max concurrent markets to quote
-  min_price_cents: 3          # skip near-certain outcomes (< 3¢ from 0 or 100)
+  min_volume_24h: 100
+  min_open_interest: 50
+  max_time_to_expiry_days: 30
+  min_spread_cents: 2
+  max_markets_active: 10
+  min_price_cents: 3          # skip near-settled (< 3¢ from 0 or 100)
   market_refresh_interval_seconds: 300
 
+# ── Fair Value Model ──────────────────────────────────────────────────────────
 fair_value:
-  imbalance_weight: 0.3       # how much orderbook imbalance shifts the mid
-  depth_levels: 5             # how many levels to consider for imbalance
-  volatility_lookback: 20     # ticks for rolling volatility estimate
+  imbalance_weight: 0.3       # how much OB imbalance shifts the mid
+  depth_levels: 5             # levels to include in imbalance calculation
+  volatility_lookback: 20     # ticks for rolling |Δmid| estimate
+  sigma_base: 1.0             # scales beta-process vol: σ_eff = σ_base·√(p(1-p))
 
+# ── OFI (Order Flow Imbalance) ────────────────────────────────────────────────
+ofi:
+  beta: 0.002                 # cents per unit OFI — calibrate from live data
+  ema_alpha: 0.10             # EMA smoothing (lower = slower, more stable)
+  max_adjustment_cents: 5.0   # clamp OFI signal to ±this many cents
+
+# ── VPIN (Adverse Selection Detection) ───────────────────────────────────────
+# VPIN > 0.3 → caution (widen 1.5–2×); VPIN > 0.6 → toxic (pull all quotes)
+vpin:
+  bucket_size: 50.0           # V* contracts per volume bucket
+  n_buckets: 50               # lookback window (number of buckets)
+
+# ── Market Making (Avellaneda-Stoikov) ───────────────────────────────────────
 market_making:
-  # Spread control
-  target_half_spread_cents: 2.0   # base half-spread (edge per side)
+  # Spread parameters
+  target_half_spread_cents: 2.0
   min_half_spread_cents: 1.0
   max_half_spread_cents: 15.0
 
   # Avellaneda-Stoikov parameters
-  risk_aversion: 0.1          # γ: higher = wider spreads for same inventory
-  order_depth_k: 1.5          # k: market depth parameter (higher = tighter quotes)
+  # Calibrated for binary contracts in [0,1] probability space.
+  # γ much smaller and κ much larger than stock-market defaults.
+  risk_aversion: 0.01         # γ: higher = wider spreads / stronger inventory skew
+  order_depth_k: 50.0         # κ: order arrival decay rate in [0,1] price space
+  t_min: 0.05                 # floor on T to prevent spread collapse near expiry
 
   # Sizing
   default_size_contracts: 5
-  max_position_contracts: 50  # per market
-  inventory_skew_factor: 0.15 # how aggressively to skew for inventory
+  max_position_contracts: 50
+  inventory_skew_factor: 0.15
 
   # Timing
-  quote_refresh_interval_seconds: 5
-  position_sync_interval_seconds: 30
   stale_quote_ttl_seconds: 30
+  position_sync_interval_seconds: 30
 
+# ── Risk Management ───────────────────────────────────────────────────────────
 risk:
   max_daily_loss_dollars: 50.0
   max_single_market_contracts: 50
-  max_total_delta_contracts: 200  # sum of absolute positions across markets
+  max_total_delta_contracts: 200
   halt_on_daily_loss: true
 
+# ── Arb Scanner ───────────────────────────────────────────────────────────────
+arb:
+  min_net_profit_cents: 1.5   # minimum after-fee profit to flag an opportunity
+
+# ── Logging ───────────────────────────────────────────────────────────────────
 logging:
   level: INFO
   file: logs/kannon.log

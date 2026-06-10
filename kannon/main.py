@@ -5,7 +5,6 @@ import logging
 import os
 import signal
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -16,13 +15,18 @@ from rich.table import Table
 
 from .api.auth import KalshiAuth
 from .api.client import KalshiClient
-from .api.feed import OrderbookFeed
+from .api.feed import MarketFeed, TradeEvent
 from .api.models import Orderbook
 from .execution.order_manager import OrderManager
 from .risk.risk_manager import RiskManager
+from .strategy.arb import ArbScanner
 from .strategy.fair_value import FairValueModel
+from .strategy.fees import FeeConfig, EVCalculator
 from .strategy.market_maker import MarketMakerStrategy
+from .strategy.ofi import OFITracker
+from .strategy.pricer import EventPricer
 from .strategy.screener import MarketScreener
+from .strategy.vpin import VPINTracker, FlowRegime
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -50,44 +54,99 @@ def load_config() -> dict:
 class KalshiBot:
     def __init__(self, cfg: dict):
         self._cfg = cfg
+
+        fee_cfg = FeeConfig(**cfg.get("fees", {}))
+        self._fee_cfg = fee_cfg
+        self._ev_calc = EVCalculator(fee_cfg)
+
         self._screener = MarketScreener(cfg["screening"])
         self._fv_model = FairValueModel(cfg.get("fair_value", {}))
-        self._mm = MarketMakerStrategy(cfg["market_making"])
+        self._mm = MarketMakerStrategy(cfg["market_making"], fee_cfg=fee_cfg)
         self._risk = RiskManager(cfg["risk"])
+        self._arb_scanner = ArbScanner(fee_cfg)
+        self._event_pricer = EventPricer()
+
+        # Per-ticker microstructure trackers
+        self._ofi: dict[str, OFITracker] = {}
+        self._vpin: dict[str, VPINTracker] = {}
+
         self._positions: dict[str, int] = {}
         self._active_tickers: list[str] = []
         self._running = False
-        # Set during run()
+
         self._client: KalshiClient | None = None
-        self._feed: OrderbookFeed | None = None
+        self._feed: MarketFeed | None = None
         self._orders: OrderManager | None = None
 
-    # ── Callbacks ─────────────────────────────────────────────────────────────
+    # ── Feed callbacks ────────────────────────────────────────────────────────
 
     async def _on_orderbook(self, ob: Orderbook):
         if not self._risk.enabled:
             return
-        fv = self._fv_model.compute(ob)
-        if fv is None:
+
+        ticker = ob.ticker
+        ofi = self._ofi.setdefault(ticker, OFITracker(**self._cfg.get("ofi", {})))
+        vpin = self._vpin.get(ticker)
+
+        # OFI: real-time fair value adjustment
+        ofi_adj = ofi.update(ob)
+
+        # VPIN state (may not have data yet — falls back to NORMAL)
+        vpin_regime = FlowRegime.NORMAL
+        vpin_mult = 1.0
+        if vpin and vpin.has_data:
+            vpin_regime = vpin.regime
+            vpin_mult = vpin.spread_multiplier()
+            if vpin_regime == FlowRegime.TOXIC:
+                # Pull all orders immediately on toxic flow
+                await self._orders.cancel_ticker(ticker)
+                logger.warning(f"VPIN TOXIC on {ticker} — quotes pulled (VPIN={vpin.value:.2f})")
+                return
+
+        fv_result = self._fv_model.compute(ob, ofi_adjustment_cents=ofi_adj)
+        if fv_result is None:
             return
 
-        position = self._positions.get(ob.ticker, 0)
-        time_remaining = self._time_remaining(ob.ticker)
+        position = self._positions.get(ticker, 0)
+        time_remaining = self._time_remaining(ticker)
 
         quote = self._mm.compute_quote(
-            ticker=ob.ticker,
-            fair_value=fv.fair_value,
+            ticker=ticker,
+            fair_value=fv_result.fair_value,
+            sigma_eff=fv_result.sigma_eff,
             position=position,
-            volatility=fv.volatility,
-            confidence=fv.confidence,
+            confidence=fv_result.confidence,
             time_remaining=time_remaining,
+            vpin_regime=vpin_regime,
+            vpin_multiplier=vpin_mult,
         )
+
         if quote:
+            logger.debug(
+                f"{ticker}: fv={fv_result.fair_value:.1f}¢ "
+                f"bid={quote.bid_price}¢ ask={quote.ask_price}¢ "
+                f"ev_bid={quote.ev_bid*100:.2f}¢ ev_ask={quote.ev_ask*100:.2f}¢ "
+                f"vpin={vpin.value:.2f if vpin else 0:.2f}"
+            )
             await self._orders.update(quote)
 
+    async def _on_trade(self, event: TradeEvent):
+        """Feed trade events into the VPIN tracker for this market."""
+        ob = self._feed.get_book(event.ticker)
+        if ob is None:
+            return
+        mid = ob.mid_cents
+        if mid is None:
+            return
+
+        vpin = self._vpin.setdefault(
+            event.ticker,
+            VPINTracker(**self._cfg.get("vpin", {}))
+        )
+        vpin.on_trade(event.price_cents, event.count, mid)
+
     def _time_remaining(self, ticker: str) -> float:
-        """Normalized time remaining in [0,1]. Falls back to 1.0 if unknown."""
-        # Will be populated once market metadata is stored; for now return 1.0
+        """Normalised time remaining [0,1]. TODO: populate from market close_time."""
         return 1.0
 
     # ── Loops ─────────────────────────────────────────────────────────────────
@@ -109,10 +168,8 @@ class KalshiBot:
                 await self._sync_positions()
             except Exception as exc:
                 logger.error(f"Position sync error: {exc}", exc_info=True)
-
-            risk = self._risk.summary()
-            if not risk["enabled"]:
-                logger.warning(f"[bold red]HALTED[/bold red]: {risk['halt_reason']}")
+            if not self._risk.enabled:
+                logger.warning(f"[bold red]HALTED[/bold red]: {self._risk.status.halt_reason}")
                 await self._orders.cancel_all()
 
     async def _stale_order_loop(self):
@@ -131,32 +188,37 @@ class KalshiBot:
         selected = self._screener.select(all_markets)
         new_tickers = [m.ticker for m in selected]
 
-        old = set(self._active_tickers)
-        new = set(new_tickers)
-
-        to_drop = old - new
-        to_add = new - old
-
-        if to_drop:
-            for t in to_drop:
-                await self._orders.cancel_ticker(t)
-            await self._feed.unsubscribe(list(to_drop))
-
-        if to_add:
-            await self._feed.subscribe(list(to_add))
+        old, new = set(self._active_tickers), set(new_tickers)
+        for t in (old - new):
+            await self._orders.cancel_ticker(t)
+            self._ofi.pop(t, None)
+            self._vpin.pop(t, None)
+        if old - new:
+            await self._feed.unsubscribe(list(old - new))
+        if new - old:
+            await self._feed.subscribe(list(new - old))
 
         self._active_tickers = new_tickers
         self._print_market_table(selected)
+
+        # Cross-market arb scan
+        arb_opps = self._arb_scanner.scan(all_markets)
+        if arb_opps:
+            console.print(f"[bold yellow]ARB opportunities: {len(arb_opps)}[/bold yellow]")
+            for opp in arb_opps:
+                console.print(f"  [cyan]{opp.description}[/cyan]")
 
     async def _sync_positions(self):
         positions = await self._client.get_positions()
         self._positions = {p.ticker: p.market_exposure for p in positions}
         self._risk.update_delta(self._positions)
         balance = await self._client.get_balance()
+        risk = self._risk.summary()
         logger.info(
             f"Balance: ${balance.balance_dollars:.2f} | "
-            f"Positions: {len(self._positions)} markets | "
-            f"Daily P&L: ${self._risk.status.daily_pnl:.2f}"
+            f"Markets: {len(self._active_tickers)} | "
+            f"Daily P&L: ${risk['daily_pnl']:.2f} | "
+            f"Delta: {risk['total_delta']}"
         )
 
     def _print_market_table(self, markets):
@@ -166,12 +228,13 @@ class KalshiBot:
         table.add_column("Ask", justify="right")
         table.add_column("Mid", justify="right")
         table.add_column("Vol 24h", justify="right")
-        table.add_column("OI", justify="right")
+        table.add_column("Pos", justify="right")
         for m in markets:
             bid = f"{m.yes_bid}¢" if m.yes_bid else "-"
             ask = f"{m.yes_ask}¢" if m.yes_ask else "-"
             mid = f"{m.mid_price:.1f}¢" if m.mid_price else "-"
-            table.add_row(m.ticker, bid, ask, mid, str(m.volume_24h), str(m.open_interest))
+            pos = str(self._positions.get(m.ticker, 0))
+            table.add_row(m.ticker, bid, ask, mid, str(m.volume_24h), pos)
         console.print(table)
 
     # ── Entry point ───────────────────────────────────────────────────────────
@@ -195,8 +258,9 @@ class KalshiBot:
                 client,
                 stale_ttl_seconds=self._cfg["market_making"].get("stale_quote_ttl_seconds", 30),
             )
-            self._feed = OrderbookFeed(ws_url=kcfg["ws_url"], auth=auth)
-            self._feed.on_update(self._on_orderbook)
+            self._feed = MarketFeed(ws_url=kcfg["ws_url"], auth=auth)
+            self._feed.on_orderbook(self._on_orderbook)
+            self._feed.on_trade(self._on_trade)
             self._running = True
 
             await self._refresh_markets()
@@ -230,7 +294,7 @@ def main():
     asyncio.set_event_loop(loop)
 
     def _handle_signal(sig, _frame):
-        console.print(f"\n[yellow]Signal {sig.name} received, shutting down...[/yellow]")
+        console.print(f"\n[yellow]Signal {sig.name} — shutting down...[/yellow]")
         loop.create_task(bot.shutdown())
         loop.call_later(8, loop.stop)
 
