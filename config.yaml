@@ -74,7 +74,7 @@ market_making:
   inventory_skew_factor: 0.15
 
   # Timing
-  stale_quote_ttl_seconds: 30
+  stale_quote_ttl_seconds: 3600  # 1 hour — prediction market orders should rest for hours
   position_sync_interval_seconds: 30
 
 # ── Risk Management ───────────────────────────────────────────────────────────

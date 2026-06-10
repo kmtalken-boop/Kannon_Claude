@@ -12,7 +12,8 @@ from ..strategy.market_maker import Quote
 
 logger = logging.getLogger(__name__)
 
-PRICE_MOVE_THRESHOLD = 1   # cents — don't replace order if price moved less than this
+PRICE_MOVE_THRESHOLD = 3   # cents — replace order only if quote shifts by ≥ this much
+QUOTE_COOLDOWN_SECONDS = 10  # minimum seconds between re-quotes per market
 
 
 @dataclass
@@ -28,6 +29,7 @@ class _MarketQuotes:
     ticker: str
     bid: Optional[_RestingOrder] = None
     ask: Optional[_RestingOrder] = None
+    last_quoted_at: float = 0.0  # monotonic time of last quote update
 
 
 class OrderManager:
@@ -45,6 +47,15 @@ class OrderManager:
     async def update(self, quote: Quote):
         async with self._lock:
             mq = self._quotes.setdefault(quote.ticker, _MarketQuotes(ticker=quote.ticker))
+            now = time.monotonic()
+            # Cooldown: skip re-quote if prices haven't moved and we quoted recently.
+            # Always process if we have no resting orders (first quote or after a cancel).
+            elapsed = now - mq.last_quoted_at
+            bid_moved = mq.bid is None or abs(mq.bid.price - quote.bid_price) >= PRICE_MOVE_THRESHOLD
+            ask_moved = mq.ask is None or abs(mq.ask.price - quote.ask_price) >= PRICE_MOVE_THRESHOLD
+            if elapsed < QUOTE_COOLDOWN_SECONDS and not bid_moved and not ask_moved:
+                return
+            mq.last_quoted_at = now
             await self._update_side(mq, quote, is_bid=True)
             await self._update_side(mq, quote, is_bid=False)
 
