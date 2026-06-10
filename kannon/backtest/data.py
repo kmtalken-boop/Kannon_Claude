@@ -67,22 +67,40 @@ class HistoricalDataLoader:
 
         logger.info(f"Fetching settled markets (last {days_back} days)...")
         cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
-        min_close_ts = int(cutoff.timestamp())
         markets: list[Market] = []
         cursor = None
-        max_pages = 20  # hard cap — prevents infinite pagination
+        max_pages = 25  # hard cap — prevents infinite pagination
 
         for _ in range(max_pages):
             batch, cursor = await self._client.get_markets(
                 status="settled", limit=200, cursor=cursor,
-                min_close_ts=min_close_ts,
             )
-            resolved = [
-                m for m in batch
-                if m.result in ("yes", "no") and m.last_price is not None
-            ]
+            if not batch:
+                break
+
+            def _within_window(m: Market) -> bool:
+                if m.result not in ("yes", "no") or m.last_price is None:
+                    return False
+                if m.close_time is None:
+                    return True
+                ct = m.close_time
+                if ct.tzinfo is None:
+                    ct = ct.replace(tzinfo=timezone.utc)
+                return ct >= cutoff
+
+            resolved = [m for m in batch if _within_window(m)]
             markets.extend(resolved)
-            if not cursor or len(markets) >= max_markets:
+
+            # If every market in this page closed before our cutoff we've gone
+            # far enough back — no point fetching more pages.
+            all_old = all(
+                m.close_time is not None and (
+                    m.close_time.replace(tzinfo=timezone.utc)
+                    if m.close_time.tzinfo is None else m.close_time
+                ) < cutoff
+                for m in batch if m.close_time is not None
+            )
+            if all_old or not cursor or len(markets) >= max_markets:
                 break
 
         markets = markets[:max_markets]
