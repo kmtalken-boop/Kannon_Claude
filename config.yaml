@@ -38,7 +38,11 @@ screening:
   # In-play sports prop markets: informed traders watching live games instantly
   # pick off any stale quote. Never quote these as an uninformed market maker.
   excluded_ticker_prefixes:
-    # Live in-game sports — informed traders watching the game pick off stale quotes instantly
+    # These markets share a structural flaw: a subset of participants has real-time
+    # observational data (live game state, live scores) that a resting limit order
+    # cannot react to. The informed trader sees the outcome forming before the
+    # market price moves, and takes the other side of any stale quote immediately.
+    # An uninformed market maker with a ~10s requote cooldown cannot compete.
     - "KXMLB"      # MLB game/player props
     - "KXNBA"      # NBA game/player props
     - "KXNHL"      # NHL game/player props
