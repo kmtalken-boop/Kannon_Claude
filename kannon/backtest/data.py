@@ -73,7 +73,7 @@ class HistoricalDataLoader:
 
         for _ in range(max_pages):
             batch, cursor = await self._client.get_markets(
-                status="finalized", limit=200, cursor=cursor,
+                status="settled", limit=200, cursor=cursor,
             )
             if not batch:
                 break
