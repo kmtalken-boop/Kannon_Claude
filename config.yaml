@@ -31,8 +31,9 @@ screening:
   min_open_interest: 0
   max_time_to_expiry_days: 30
   min_spread_cents: 2
+  max_spread_cents: 20        # reject illiquid markets with >20¢ spread (adverse selection)
   max_markets_active: 10
-  min_price_cents: 3          # skip near-settled (< 3¢ from 0 or 100)
+  min_price_cents: 5          # skip near-settled (< 5¢ from 0 or 100)
   market_refresh_interval_seconds: 300
 
 # ── Fair Value Model ──────────────────────────────────────────────────────────
@@ -51,21 +52,20 @@ ofi:
 # ── VPIN (Adverse Selection Detection) ───────────────────────────────────────
 # VPIN > 0.3 → caution (widen 1.5–2×); VPIN > 0.6 → toxic (pull all quotes)
 vpin:
-  bucket_size: 50.0           # V* contracts per volume bucket
-  n_buckets: 50               # lookback window (number of buckets)
+  bucket_size: 5.0            # V* contracts per volume bucket (demo has low volume)
+  n_buckets: 20               # lookback window (number of buckets)
 
 # ── Market Making (Avellaneda-Stoikov) ───────────────────────────────────────
 market_making:
   # Spread parameters
-  target_half_spread_cents: 2.0
-  min_half_spread_cents: 1.0
-  max_half_spread_cents: 15.0
+  target_half_spread_cents: 5.0   # 10¢ total spread minimum for uninformed quoting
+  min_half_spread_cents: 3.0
+  max_half_spread_cents: 20.0
 
   # Avellaneda-Stoikov parameters
   # Calibrated for binary contracts in [0,1] probability space.
-  # γ much smaller and κ much larger than stock-market defaults.
-  risk_aversion: 0.01         # γ: higher = wider spreads / stronger inventory skew
-  order_depth_k: 50.0         # κ: order arrival decay rate in [0,1] price space
+  risk_aversion: 0.05         # γ: higher = wider spreads / stronger inventory skew
+  order_depth_k: 10.0         # κ: order arrival decay rate in [0,1] price space
   t_min: 0.05                 # floor on T to prevent spread collapse near expiry
 
   # Sizing

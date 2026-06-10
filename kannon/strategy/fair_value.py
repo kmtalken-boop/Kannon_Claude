@@ -150,18 +150,12 @@ class FairValueModel:
         )
 
     def _one_sided(self, price: float, side: str, ticker: str) -> FVResult:
-        p = price / 100.0
-        sigma_eff = self._sigma_base * math.sqrt(max(p * (1 - p), 1e-6))
-        return FVResult(
-            fair_value=price,
-            confidence=0.1,
-            mid=price,
-            imbalance=0.0,
-            volatility_cents=0.0,
-            sigma_eff=sigma_eff,
-            ofi_adjustment=0.0,
-            external_anchor=None,
-        )
+        # A lone ask at 98¢ or lone bid at 2¢ is usually a stale default order,
+        # not a true signal about fair value. Using that price as FV causes the
+        # bot to quote at extreme prices (bid 96¢ on a market worth 30¢).
+        # Use cached FV from previous two-sided computation, or 50¢ prior.
+        fallback = self._last_fv.get(ticker, 50.0)
+        return self._empty_book(fallback, ticker)
 
     @staticmethod
     def _rolling_vol(hist: deque) -> float:

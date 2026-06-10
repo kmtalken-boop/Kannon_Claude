@@ -14,6 +14,7 @@ class MarketScreener:
         self.min_open_interest: int = cfg.get("min_open_interest", 50)
         self.max_days_to_expiry: float = cfg.get("max_time_to_expiry_days", 30)
         self.min_spread_cents: int = cfg.get("min_spread_cents", 2)
+        self.max_spread_cents: int = cfg.get("max_spread_cents", 20)
         self.min_price_cents: float = cfg.get("min_price_cents", 3)
         self.max_active: int = cfg.get("max_markets_active", 10)
 
@@ -29,6 +30,8 @@ class MarketScreener:
         spread = m.yes_ask - m.yes_bid
         if spread < self.min_spread_cents:
             return False, f"spread {spread}¢ < {self.min_spread_cents}¢"
+        if spread > self.max_spread_cents:
+            return False, f"spread too wide ({spread}¢ > {self.max_spread_cents}¢)"
         mid = m.mid_price
         if mid is not None:
             distance = min(mid, 100 - mid)
@@ -50,9 +53,10 @@ class MarketScreener:
         s += min(m.volume_24h / 500.0, 4.0)
         # Open interest: depth of existing market
         s += min(m.open_interest / 200.0, 3.0)
-        # Spread: more edge per fill (but not so wide the market is illiquid)
+        # Spread: prefer tight external spreads — they indicate an active, price-discovered
+        # market. Wide spreads mean uncertain/illiquid markets where adverse selection is high.
         if m.spread is not None:
-            s += min(m.spread / 4.0, 3.0) * (1 if m.spread < 20 else 0.5)
+            s += max(0.0, 3.0 - abs(m.spread - 6) / 4.0)  # peaks at 6¢, falls off
         # Prefer mid-range prices — maximum variance, most uncertainty to earn from
         if m.mid_price is not None:
             uncertainty = min(m.mid_price, 100 - m.mid_price) / 50.0

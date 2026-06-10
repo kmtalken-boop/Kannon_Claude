@@ -168,8 +168,10 @@ class KalshiBot:
         remaining_secs = (close_time - datetime.now(timezone.utc)).total_seconds()
         if remaining_secs <= 0:
             return self._mm._t_min
-        # Treat 24h+ as T=1.0; scale linearly from there down to t_min
-        t = min(1.0, remaining_secs / 86400.0)
+        # Normalize on a 7-day window: 7d → 1.0, 24h → 0.14, 1h → 0.006.
+        # This causes A-S to widen spreads meaningfully as expiry approaches,
+        # protecting against pin-risk on near-expiry markets.
+        t = min(1.0, remaining_secs / (7 * 86400.0))
         return max(self._mm._t_min, t)
 
     # ── Loops ─────────────────────────────────────────────────────────────────
