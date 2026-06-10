@@ -49,25 +49,29 @@ def _synthetic_trades(
     n_trades: int = 150,
 ) -> list["HistoricalTrade"]:
     """
-    Two-phase Ornstein-Uhlenbeck price path for demo markets with no API history.
+    Realistic synthetic price path for demo markets with no API trade history.
 
-    Phase 1 (first 70 %): mean-reverts to 50¢ — simulates genuine uncertainty.
-    Phase 2 (last 30 %): drifts toward resolution — simulates information arrival.
+    Phase 1 (first 92 %): price mean-reverts near 50¢ with σ=1.5¢/tick.
+      Small individual steps stay inside the MM's spread most of the time,
+      giving a ~10 % fill rate that matches real thin-book Kalshi markets.
+    Phase 2 (last 8 %): drifts toward the resolution (85 or 15¢) as
+      information is revealed — unavoidable adverse selection for any strategy.
 
-    This produces realistic two-sided flow during phase 1 (good for MM) and
-    adverse selection during phase 2 (unavoidable for any strategy).
-    Deterministic per ticker so cached results are reproducible.
+    taker_side is 70 % correlated with the price direction and 30 % random,
+    reflecting a realistic mix of informed and uninformed flow.
+
+    Deterministic per ticker (hash seed) so cached results are reproducible.
     """
     rng = random.Random(hash(ticker))
-    resolution_price = 95.0 if result == "yes" else 5.0
+    resolution_price = 85.0 if result == "yes" else 15.0
     end_time = close_time or datetime.now(timezone.utc)
     start_time = end_time - timedelta(hours=2)
     span_s = (end_time - start_time).total_seconds()
 
-    theta, sigma = 0.12, 5.0
-    price = 50.0 + rng.gauss(0, 3)
+    theta, sigma = 0.10, 1.5
+    price = 50.0 + rng.gauss(0, 2)
     trades = []
-    phase_boundary = 0.70
+    phase_boundary = 0.92
 
     for i in range(n_trades):
         t_frac = i / n_trades
@@ -80,13 +84,20 @@ def _synthetic_trades(
         dp = theta * (mu - price) + sigma * rng.gauss(0, 1)
         price = max(1.0, min(99.0, price + dp))
         ts = start_time + timedelta(seconds=span_s * i / n_trades)
+
+        # 70% informed (taker_side follows price direction), 30% noise
+        if rng.random() < 0.70:
+            taker_side = "yes" if dp >= 0 else "no"
+        else:
+            taker_side = rng.choice(["yes", "no"])
+
         trades.append(HistoricalTrade(
             trade_id=f"syn-{ticker}-{i}",
             ticker=ticker,
             timestamp=ts.isoformat(),
             yes_price_cents=int(round(price)),
-            count=rng.randint(1, 8),
-            taker_side="yes" if dp >= 0 else "no",
+            count=rng.randint(1, 6),
+            taker_side=taker_side,
         ))
     return trades
 
