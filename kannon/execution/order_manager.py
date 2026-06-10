@@ -147,9 +147,9 @@ class OrderManager:
                 mq.ask = _RestingOrder(order.order_id, new_price, new_size, time.monotonic())
 
             side_str = "BID" if is_bid else "ASK"
-            logger.debug(
-                f"{side_str} {quote.ticker} {new_price}¢ x{new_size} "
-                f"(fv={quote.fair_value:.1f}¢ res={quote.reservation_price:.1f}¢)"
+            logger.info(
+                f"QUOTE {side_str} {quote.ticker} {new_price}¢×{new_size} "
+                f"(fv={quote.fair_value:.1f}¢ spread={quote.ask_price - quote.bid_price}¢)"
             )
         except KalshiAPIError as exc:
             logger.error(f"Order placement failed on {quote.ticker}: {exc}")
@@ -157,7 +157,7 @@ class OrderManager:
     async def _cancel(self, order_id: str):
         try:
             await self._client.cancel_order(order_id)
-            logger.debug(f"Cancelled {order_id}")
+            logger.debug(f"Cancelled order {order_id}")
         except KalshiAPIError as exc:
             if exc.status_code != 404:   # 404 = already filled/cancelled
                 logger.warning(f"Cancel failed {order_id}: {exc}")

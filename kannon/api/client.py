@@ -90,7 +90,12 @@ class KalshiClient:
         if min_close_ts is not None:
             params["min_close_ts"] = min_close_ts
         data = await self._request("GET", "/markets", params=params)
-        markets = [Market(**m) for m in data.get("markets", [])]
+        markets = []
+        for m in data.get("markets", []):
+            try:
+                markets.append(Market(**m))
+            except Exception as exc:
+                logger.debug(f"Skipping market {m.get('ticker', '?')}: {exc}")
         return markets, data.get("cursor")
 
     async def get_all_open_markets(self, max_pages: int = 20) -> list[Market]:
@@ -170,7 +175,11 @@ class KalshiClient:
             if cursor:
                 params["cursor"] = cursor
             data = await self._request("GET", "/portfolio/orders", params=params)
-            all_orders.extend(Order(**o) for o in data.get("orders", []))
+            for o in data.get("orders", []):
+                try:
+                    all_orders.append(Order(**o))
+                except Exception as exc:
+                    logger.debug(f"Skipping order {o.get('order_id', '?')}: {exc}")
             cursor = data.get("cursor")
             if not cursor:
                 break
@@ -180,7 +189,13 @@ class KalshiClient:
 
     async def get_positions(self) -> list[Position]:
         data = await self._request("GET", "/portfolio/positions")
-        return [Position(**p) for p in data.get("market_positions", [])]
+        positions = []
+        for p in data.get("market_positions", []):
+            try:
+                positions.append(Position(**p))
+            except Exception as exc:
+                logger.debug(f"Skipping position {p.get('ticker', '?')}: {exc}")
+        return positions
 
     async def get_balance(self) -> Balance:
         data = await self._request("GET", "/portfolio/balance")

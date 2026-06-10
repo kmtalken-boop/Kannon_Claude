@@ -69,17 +69,24 @@ class MarketScreener:
 
     def select(self, markets: list[Market]) -> list[Market]:
         candidates = []
-        rejected = 0
+        rejection_counts: dict[str, int] = {}
         for m in markets:
             ok, reason = self.passes(m)
             if ok:
                 candidates.append((self.score(m), m))
             else:
-                rejected += 1
+                rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
+                logger.debug(f"REJECT {m.ticker}: {reason}")
 
         candidates.sort(key=lambda x: x[0], reverse=True)
         selected = [m for _, m in candidates[: self.max_active]]
+
+        # Summarise rejection reasons at INFO level for observability
+        total_rejected = sum(rejection_counts.values())
+        top_reasons = sorted(rejection_counts.items(), key=lambda x: -x[1])[:4]
+        reasons_str = ", ".join(f"{r}×{n}" for r, n in top_reasons)
         logger.info(
-            f"Screened {len(markets)} markets: {len(selected)} selected, {rejected} rejected"
+            f"Screened {len(markets)}: {len(selected)} selected, "
+            f"{total_rejected} rejected ({reasons_str})"
         )
         return selected

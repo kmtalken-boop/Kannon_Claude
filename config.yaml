@@ -62,7 +62,9 @@ screening:
 
 # ── Fair Value Model ──────────────────────────────────────────────────────────
 fair_value:
-  imbalance_weight: 0.3       # how much OB imbalance shifts the mid
+  # In thin demo books a single $1 order creates 100% imbalance.
+  # 0.15 limits FV shift to ≤1.5¢ per $1 of one-sided depth; tune up for live markets.
+  imbalance_weight: 0.15
   depth_levels: 5             # levels to include in imbalance calculation
   volatility_lookback: 20     # ticks for rolling |Δmid| estimate
   sigma_base: 1.0             # scales beta-process vol: σ_eff = σ_base·√(p(1-p))

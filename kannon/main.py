@@ -25,7 +25,6 @@ from .strategy.fair_value import FairValueModel
 from .strategy.fees import FeeConfig, EVCalculator
 from .strategy.market_maker import MarketMakerStrategy
 from .strategy.ofi import OFITracker
-from .strategy.pricer import EventPricer
 from .strategy.screener import MarketScreener
 from .strategy.vpin import VPINTracker, FlowRegime
 
@@ -65,7 +64,6 @@ class KalshiBot:
         self._mm = MarketMakerStrategy(cfg["market_making"], fee_cfg=fee_cfg)
         self._risk = RiskManager(cfg["risk"])
         self._arb_scanner = ArbScanner(fee_cfg)
-        self._event_pricer = EventPricer()
 
         # Per-ticker microstructure trackers
         self._ofi: dict[str, OFITracker] = {}
@@ -238,6 +236,11 @@ class KalshiBot:
             await self._feed.subscribe(list(new - old))
 
         self._active_tickers = new_tickers
+        if not selected:
+            logger.warning(
+                f"Screener found 0 markets from {len(all_markets)} fetched — "
+                "all excluded or failed filters. Bot is idle."
+            )
         self._print_market_table(selected)
 
         # Cross-market arb scan
