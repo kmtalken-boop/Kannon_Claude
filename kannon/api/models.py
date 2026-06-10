@@ -30,6 +30,7 @@ class OrderStatus(str, Enum):
 
 class MarketStatus(str, Enum):
     OPEN = "open"
+    ACTIVE = "active"
     CLOSED = "closed"
     SETTLED = "settled"
     FINALIZED = "finalized"
