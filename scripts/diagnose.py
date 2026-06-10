@@ -24,14 +24,36 @@ async def main():
             print(f"  FAILED: {e}")
         print()
 
-        # ── Open market fields ──────────────────────────────────────────
-        print("── Sample open markets (raw fields) ──")
+        # ── Open market fields — raw keys ──────────────────────────────
+        print("── First open market raw keys ──")
         data = await client._request("GET", "/markets", params={"status": "open", "limit": 5})
         markets = data.get("markets", [])
-        for m in markets[:3]:
-            print(f"  {m.get('ticker'):40s}  status={m.get('status')}  "
-                  f"vol24h={m.get('volume_24h')}  OI={m.get('open_interest')}  "
-                  f"bid={m.get('yes_bid')}  ask={m.get('yes_ask')}")
+        if markets:
+            print(f"  keys: {sorted(markets[0].keys())}")
+            print(f"  first market: {markets[0]}")
+        print()
+
+        # ── Scan for markets with bid/ask ───────────────────────────────
+        print("── Scanning for markets with bid/ask (up to 1000) ──")
+        quoted = []
+        cursor = None
+        pages = 0
+        while pages < 5 and len(quoted) < 5:
+            params = {"status": "open", "limit": 200}
+            if cursor:
+                params["cursor"] = cursor
+            data = await client._request("GET", "/markets", params=params)
+            for m in data.get("markets", []):
+                if m.get("yes_bid") is not None and m.get("yes_ask") is not None:
+                    quoted.append(m)
+            cursor = data.get("cursor")
+            pages += 1
+            if not cursor:
+                break
+        print(f"  Found {len(quoted)} quoted markets in {pages} pages")
+        for m in quoted[:5]:
+            print(f"  {m.get('ticker'):50s}  bid={m.get('yes_bid')}  ask={m.get('yes_ask')}  "
+                  f"vol24h={m.get('volume_24h')}  OI={m.get('open_interest')}")
         print()
 
         # ── Settled market fields ───────────────────────────────────────
