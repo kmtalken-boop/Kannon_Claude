@@ -32,6 +32,7 @@ class MarketStatus(str, Enum):
     OPEN = "open"
     CLOSED = "closed"
     SETTLED = "settled"
+    FINALIZED = "finalized"
 
 
 class Market(BaseModel):
