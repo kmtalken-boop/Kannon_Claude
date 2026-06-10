@@ -17,10 +17,14 @@ class MarketScreener:
         self.max_spread_cents: int = cfg.get("max_spread_cents", 20)
         self.min_price_cents: float = cfg.get("min_price_cents", 3)
         self.max_active: int = cfg.get("max_markets_active", 10)
+        self.excluded_prefixes: list[str] = cfg.get("excluded_ticker_prefixes", [])
 
     def passes(self, m: Market) -> tuple[bool, str]:
         if m.status.value not in ("open", "active"):
             return False, "not open"
+        for prefix in self.excluded_prefixes:
+            if m.ticker.startswith(prefix):
+                return False, f"excluded prefix ({prefix})"
         if m.yes_bid is None or m.yes_ask is None:
             return False, "no quotes"
         if m.volume_24h < self.min_volume_24h:
