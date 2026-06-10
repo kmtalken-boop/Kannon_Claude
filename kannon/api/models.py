@@ -205,16 +205,23 @@ class Position(BaseModel):
     def _remap_fp_fields(cls, data: dict) -> dict:
         if not isinstance(data, dict):
             return data
-        if not data.get("market_exposure"):
-            for key in ("market_exposure_fp", "position", "net_position"):
+        # position_fp: "-1.00" → market_exposure: -1 (net YES contracts)
+        if data.get("market_exposure") is None:
+            for key in ("position_fp", "market_exposure_fp", "position", "net_position"):
                 raw = data.get(key)
                 if raw is not None:
                     data["market_exposure"] = int(float(raw))
                     break
+        # realized_pnl_dollars: "0.000000" (already in dollars)
         if not data.get("realized_pnl"):
             raw = data.get("realized_pnl_dollars") or data.get("realized_pnl_fp")
             if raw is not None:
                 data["realized_pnl"] = float(raw)
+        # fees_paid_dollars: "0.000000"
+        if not data.get("fees_paid"):
+            raw = data.get("fees_paid_dollars") or data.get("fees_paid_fp")
+            if raw is not None:
+                data["fees_paid"] = float(raw)
         return data
 
 
