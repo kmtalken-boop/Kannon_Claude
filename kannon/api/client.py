@@ -158,13 +158,22 @@ class KalshiClient:
         ticker: Optional[str] = None,
         status: Optional[str] = None,
     ) -> list[Order]:
-        params: dict[str, Any] = {}
-        if ticker:
-            params["ticker"] = ticker
-        if status:
-            params["status"] = status
-        data = await self._request("GET", "/portfolio/orders", params=params)
-        return [Order(**o) for o in data.get("orders", [])]
+        all_orders: list[Order] = []
+        cursor: Optional[str] = None
+        while True:
+            params: dict[str, Any] = {"limit": 100}
+            if ticker:
+                params["ticker"] = ticker
+            if status:
+                params["status"] = status
+            if cursor:
+                params["cursor"] = cursor
+            data = await self._request("GET", "/portfolio/orders", params=params)
+            all_orders.extend(Order(**o) for o in data.get("orders", []))
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+        return all_orders
 
     # ── Portfolio ─────────────────────────────────────────────────────────────
 
