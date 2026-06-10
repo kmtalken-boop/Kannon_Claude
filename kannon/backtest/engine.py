@@ -63,8 +63,11 @@ class BacktestEngine:
     Simulates market making P&L on historical trade data.
     """
 
-    # EMA alpha for fair value estimation from trade prices
-    _FV_ALPHA = 0.05
+    # EMA alpha for fair value estimation from trade prices.
+    # 0.50 gives a half-life of ~2 trades so FV tracks price with minimal lag.
+    # A slow alpha (e.g. 0.05) causes quotes to become stale between trades,
+    # inflating the simulated fill rate by 4-6×.
+    _FV_ALPHA = 0.50
     # Warm-up trades before we start quoting
     _WARMUP = 20
 
@@ -166,32 +169,33 @@ class BacktestEngine:
                         position -= fills[-1].count
 
         # ── Compute P&L at resolution ─────────────────────────────────────────
-        gross, fee_total, tax_total = 0.0, 0.0, 0.0
+        # Kalshi charges fee_rate × gross_profit on each individual winning fill
+        # (assessed per settlement, so per-fill is correct for Kalshi's model).
+        # Taxes however are owed on NET after-fee income for the year, not per
+        # individual fill. We apply the tax rate to max(0, gross - fee_total)
+        # so a market with profitable and unprofitable fills doesn't generate
+        # phantom tax on gains that are offset by losses in the same market.
+        gross, fee_total = 0.0, 0.0
 
         for fill in fills:
             fill_price = fill.price_cents / 100.0
             count = fill.count
 
             if fill.side == "bid":
-                # We bought YES at fill_price, paid fee on the win
                 gross_profit = (resolution_price / 100.0 - fill_price) * count
-                fee = max(0.0, gross_profit) * self._fee_cfg.fee_rate + \
-                      self._fee_cfg.flat_fee_cents / 100.0 * count
-                after_fee = gross_profit - fee
-                tax = max(0.0, after_fee) * self._fee_cfg.marginal_tax_rate
             else:
-                # We sold YES at fill_price
                 gross_profit = (fill_price - resolution_price / 100.0) * count
-                fee = max(0.0, gross_profit) * self._fee_cfg.fee_rate + \
-                      self._fee_cfg.flat_fee_cents / 100.0 * count
-                after_fee = gross_profit - fee
-                tax = max(0.0, after_fee) * self._fee_cfg.marginal_tax_rate
 
+            fee = (
+                max(0.0, gross_profit) * self._fee_cfg.fee_rate
+                + self._fee_cfg.flat_fee_cents / 100.0 * count
+            )
             gross += gross_profit
             fee_total += fee
-            tax_total += tax
 
-        net = gross - fee_total - tax_total
+        after_fee_net = gross - fee_total
+        tax_total = max(0.0, after_fee_net) * self._fee_cfg.marginal_tax_rate
+        net = after_fee_net - tax_total
 
         # ── Adverse selection rate ────────────────────────────────────────────
         adverse = 0
