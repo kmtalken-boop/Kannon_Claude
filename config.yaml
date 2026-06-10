@@ -18,9 +18,12 @@ polymarket:
 # Set marginal_tax_rate to your effective federal + state rate (e.g. 0.35 for 35%).
 # Verify with a tax professional; tax rules for prediction markets are evolving.
 fees:
-  fee_rate: 0.07              # 7% of gross profit on the winning side
-  marginal_tax_rate: 0.0      # Set your rate (0.0 = ignore taxes in EV calc)
-  flat_fee_cents: 0.0         # Per-contract flat fee (usually 0 on Kalshi)
+  # Kalshi maker fee = 0% on standard markets (resting limit orders are free).
+  # Taker fee formula: round_up(0.07 × C × P × (1-P)), max ~$1.75/100 contracts.
+  # As a market maker we place resting limit orders → we are always the maker.
+  fee_rate: 0.0               # 0% maker fee (standard markets)
+  marginal_tax_rate: 0.0      # Set your effective federal+state rate (e.g. 0.17)
+  flat_fee_cents: 0.0         # Per-contract flat fee (0 on Kalshi)
 
 # ── Market Screening ──────────────────────────────────────────────────────────
 screening:

@@ -198,18 +198,22 @@ class BacktestEngine:
         net = after_fee_net - tax_total
 
         # ── Adverse selection rate ────────────────────────────────────────────
+        # Compare future prices vs the FILL PRICE (not vs FV at fill time).
+        # A bid fill (we bought at bid_price) is adversely selected when
+        # future price falls BELOW bid_price — meaning we overpaid relative
+        # to where the market ends up. Comparing vs FV overstates adverse
+        # selection because FV-at-fill still reflects the pre-fill price.
         adverse = 0
         for fill in fills:
-            # Look at price moves in the 5 trades after fill
             fill_idx = next(
                 (i for i, t in enumerate(trades) if t.timestamp >= fill.timestamp), None
             )
             if fill_idx is not None and fill_idx + 5 < len(trades):
                 future_prices = [trades[fill_idx + j].yes_price_cents for j in range(1, 6)]
                 future_mid = sum(future_prices) / len(future_prices)
-                if fill.side == "bid" and future_mid < fill.fv_at_fill:
+                if fill.side == "bid" and future_mid < fill.price_cents:
                     adverse += 1
-                elif fill.side == "ask" and future_mid > fill.fv_at_fill:
+                elif fill.side == "ask" and future_mid > fill.price_cents:
                     adverse += 1
 
         adv_rate = adverse / len(fills) if fills else 0.0
