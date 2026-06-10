@@ -49,9 +49,14 @@ def _synthetic_trades(
     n_trades: int = 150,
 ) -> list["HistoricalTrade"]:
     """
-    Ornstein-Uhlenbeck price path ending near resolution for demo markets
-    that have no trade history on the API.  Deterministic per ticker so the
-    cache is reproducible.
+    Two-phase Ornstein-Uhlenbeck price path for demo markets with no API history.
+
+    Phase 1 (first 70 %): mean-reverts to 50¢ — simulates genuine uncertainty.
+    Phase 2 (last 30 %): drifts toward resolution — simulates information arrival.
+
+    This produces realistic two-sided flow during phase 1 (good for MM) and
+    adverse selection during phase 2 (unavoidable for any strategy).
+    Deterministic per ticker so cached results are reproducible.
     """
     rng = random.Random(hash(ticker))
     resolution_price = 95.0 if result == "yes" else 5.0
@@ -59,12 +64,19 @@ def _synthetic_trades(
     start_time = end_time - timedelta(hours=2)
     span_s = (end_time - start_time).total_seconds()
 
-    theta, sigma = 0.08, 4.0
-    price = 50.0
+    theta, sigma = 0.12, 5.0
+    price = 50.0 + rng.gauss(0, 3)
     trades = []
+    phase_boundary = 0.70
+
     for i in range(n_trades):
         t_frac = i / n_trades
-        mu = 50.0 + (resolution_price - 50.0) * t_frac
+        if t_frac < phase_boundary:
+            mu = 50.0
+        else:
+            res_frac = (t_frac - phase_boundary) / (1.0 - phase_boundary)
+            mu = 50.0 + (resolution_price - 50.0) * res_frac
+
         dp = theta * (mu - price) + sigma * rng.gauss(0, 1)
         price = max(1.0, min(99.0, price + dp))
         ts = start_time + timedelta(seconds=span_s * i / n_trades)
