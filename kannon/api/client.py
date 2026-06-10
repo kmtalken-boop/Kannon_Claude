@@ -5,6 +5,7 @@ import logging
 import time
 import uuid
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -37,6 +38,7 @@ def _parse_orderbook_fp(raw_levels: list) -> list[OrderbookLevel]:
 class KalshiClient:
     def __init__(self, base_url: str, auth: KalshiAuth, rate_limit_rps: float = 10.0):
         self.base_url = base_url.rstrip("/")
+        self._base_path = urlparse(self.base_url).path  # e.g. "/trade-api/v2"
         self.auth = auth
         self._rps = rate_limit_rps
         self._min_interval = 1.0 / rate_limit_rps
@@ -60,7 +62,7 @@ class KalshiClient:
     async def _request(self, method: str, path: str, **kwargs) -> Any:
         await self._throttle()
         url = self.base_url + path
-        headers = self.auth.sign_request(method, path)
+        headers = self.auth.sign_request(method, self._base_path + path)
         for attempt in range(5):
             resp = await self._http.request(method, url, headers=headers, **kwargs)
             if resp.status_code == 429:

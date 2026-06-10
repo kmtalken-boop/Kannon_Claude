@@ -18,7 +18,7 @@ class MarketScreener:
         self.max_active: int = cfg.get("max_markets_active", 10)
 
     def passes(self, m: Market) -> tuple[bool, str]:
-        if m.status.value != "open":
+        if m.status.value not in ("open", "active"):
             return False, "not open"
         if m.yes_bid is None or m.yes_ask is None:
             return False, "no quotes"
