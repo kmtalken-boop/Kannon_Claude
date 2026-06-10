@@ -66,14 +66,17 @@ class HistoricalDataLoader:
             return [Market(**m) for m in cached]
 
         logger.info(f"Fetching settled markets (last {days_back} days)...")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+        min_close_ts = int(cutoff.timestamp())
         markets: list[Market] = []
         cursor = None
+        max_pages = 20  # hard cap — prevents infinite pagination
 
-        while len(markets) < max_markets:
+        for _ in range(max_pages):
             batch, cursor = await self._client.get_markets(
-                status="settled", limit=200, cursor=cursor
+                status="settled", limit=200, cursor=cursor,
+                min_close_ts=min_close_ts,
             )
-            # Only keep markets with a known result
             resolved = [
                 m for m in batch
                 if m.result in ("yes", "no") and m.last_price is not None

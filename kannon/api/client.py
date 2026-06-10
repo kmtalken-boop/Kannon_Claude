@@ -80,10 +80,13 @@ class KalshiClient:
         status: str = "open",
         limit: int = 200,
         cursor: Optional[str] = None,
+        min_close_ts: Optional[int] = None,
     ) -> tuple[list[Market], Optional[str]]:
         params: dict[str, Any] = {"limit": limit, "status": status}
         if cursor:
             params["cursor"] = cursor
+        if min_close_ts is not None:
+            params["min_close_ts"] = min_close_ts
         data = await self._request("GET", "/markets", params=params)
         markets = [Market(**m) for m in data.get("markets", [])]
         return markets, data.get("cursor")
