@@ -406,7 +406,11 @@ def main():
     asyncio.set_event_loop(loop)
 
     def _handle_signal(sig, _frame):
-        console.print(f"\n[yellow]Signal {sig.name} — shutting down...[/yellow]")
+        try:
+            sig_name = signal.Signals(sig).name
+        except (ValueError, TypeError):
+            sig_name = str(sig)
+        console.print(f"\n[yellow]Signal {sig_name} — shutting down...[/yellow]")
         loop.call_soon_threadsafe(lambda: loop.create_task(bot.shutdown()))
 
     signal.signal(signal.SIGINT, _handle_signal)
