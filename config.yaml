@@ -1,3 +1,71 @@
+# ── Novig EV Maker Bot ────────────────────────────────────────────────────────
+# Run with: kannon-novig
+# Required env vars: NOVIG_API_KEY, ODDS_API_KEY
+#
+# How it works:
+#   1. Fetches h2h lines for configured sports from sharp books via The Odds API.
+#   2. Devigs using the power method → true probabilities.
+#   3. Fetches events available on Novig and matches them by team name.
+#   4. For each outcome where a make bet at the current/better Novig odds gives
+#      EV >= min_ev_threshold, posts a limit make bet.
+#   5. Background monitor checks every monitor_interval_seconds:
+#        - Cancels orders where EV has dropped below threshold.
+#        - Cancels orders that have been undercut (no longer top of book).
+novig:
+  # TODO: Replace with actual Novig API base URL (check their developer docs)
+  base_url: https://api.novig.us
+
+  # Sports to scan — uses The Odds API sport key format
+  sports:
+    - americanfootball_nfl
+    - basketball_nba
+    - baseball_mlb
+    - icehockey_nhl
+
+  # Only place bets with EV >= this (0.05 = 5%)
+  min_ev_threshold: 0.05
+
+  # Devigging method: "power" (recommended) or "multiplicative"
+  devig_method: power
+
+  # Novig's platform fee on winnings (e.g. 0.02 for 2%). Set to 0 if unknown.
+  fee_rate: 0.0
+
+  # Scan for new opportunities every N seconds
+  scan_interval_seconds: 60
+
+  # Check pending orders every N seconds
+  monitor_interval_seconds: 30
+
+  # Cancel an order if another maker has posted better odds (we've been undercut)
+  cancel_if_not_top_of_book: true
+
+  # Stake per bet
+  default_stake_usd: 10.0
+  max_stake_usd: 50.0
+
+  # Max simultaneous make bets per event (1 = at most one open position per game)
+  max_orders_per_event: 1
+
+  # API rate limit (requests per second)
+  rate_limit_rps: 2.0
+
+# ── The Odds API (sharp book lines for devigging) ─────────────────────────────
+# Free tier: 500 requests/month.  Get a key at: https://the-odds-api.com
+# Line cache limits API consumption — Novig scan + monitor together
+# will use ≈ 2 cached fetches per minute across all sports.
+odds_api:
+  # Sharp bookmakers, listed in descending trust order.
+  # "pinnacle" is the sharpest market globally; "circasports" is top US sharp book.
+  # See full list at: https://the-odds-api.com/sports-odds-data/bookmaker-apis.html
+  bookmakers:
+    - pinnacle
+    - circasports
+
+  # Cache fresh odds for this many seconds (reduces API request consumption)
+  cache_ttl_seconds: 60
+
+# ── Kalshi ────────────────────────────────────────────────────────────────────
 kalshi:
   environment: demo
   base_url: https://demo-api.kalshi.co/trade-api/v2

@@ -28,6 +28,7 @@ dev = [
 [project.scripts]
 kannon = "kannon.main:main"
 kannon-poly = "kannon.polymarket.main:main"
+kannon-novig = "kannon.novig.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
