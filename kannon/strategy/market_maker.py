@@ -58,6 +58,9 @@ class MarketMakerStrategy:
         self._max_pos: int = cfg.get("max_position_contracts", 50)
         self._skew: float = cfg.get("inventory_skew_factor", 0.15)
         self._t_min: float = cfg.get("t_min", 0.05)   # pin-risk floor on T
+        # k_pin: extra half-spread at extreme prices (diverges as p→0 or p→1).
+        # At 5¢ (p=0.05): adds k_pin/sqrt(0.05) ≈ 4.5×k_pin.  Default 0.0 (off).
+        self._k_pin: float = cfg.get("pin_risk_coeff", 0.0)
         self._ev_calc = EVCalculator(fee_cfg or FeeConfig())
 
     def compute_quote(
@@ -100,9 +103,19 @@ class MarketMakerStrategy:
         # ── VPIN widening ──────────────────────────────────────────────────────
         half_spread *= vpin_multiplier
 
+        # ── Pin-risk extra floor: spread diverges near 0 or 100 ───────────────
+        if self._k_pin > 0:
+            distance = min(fair_value, 100.0 - fair_value) / 100.0  # [0, 0.5]
+            if distance > 0:
+                import math as _math
+                pin_extra = self._k_pin / _math.sqrt(distance)
+                half_spread = max(half_spread, pin_extra)
+
         # ── Inventory adjustment ───────────────────────────────────────────────
         pos_ratio = position / self._max_pos
-        inv_adj = pos_ratio * self._skew * half_spread * 2.0
+        raw_inv_adj = pos_ratio * self._skew * half_spread * 2.0
+        # Clamp adjustment so bid always stays below FV and ask stays above FV
+        inv_adj = max(-half_spread * 0.9, min(half_spread * 0.9, raw_inv_adj))
         reservation = fair_value - inv_adj
 
         # ── Quote prices ───────────────────────────────────────────────────────
@@ -119,10 +132,12 @@ class MarketMakerStrategy:
         ev_ask = self._ev_calc.ev_sell_yes(float(ask_price), fv_prob)
 
         if ev_bid < 0 or ev_ask < 0:
-            # Try widening by one cent until both are positive or we hit max spread
+            # Widen only the failing side (not symmetrically — EV issues are usually one-sided)
             for extra in range(1, 10):
-                bp = max(1, bid_price - extra)
-                ap = min(99, ask_price + extra)
+                bp = max(1, bid_price - extra) if ev_bid < 0 else bid_price
+                ap = min(99, ask_price + extra) if ev_ask < 0 else ask_price
+                if ap <= bp:
+                    ap = bp + 1
                 ev_bid = self._ev_calc.ev_buy_yes(float(bp), fv_prob)
                 ev_ask = self._ev_calc.ev_sell_yes(float(ap), fv_prob)
                 if ev_bid >= 0 and ev_ask >= 0:
@@ -134,15 +149,19 @@ class MarketMakerStrategy:
                 return None
 
         # ── Size skewing ───────────────────────────────────────────────────────
+        # Use default_size as the base to keep both sides active at any inventory.
+        # Apply directional skewing: congested side reduced, preferred side normal.
         utilization = abs(position) / self._max_pos
-        base = max(1, round(self._default_size * max(0.2, 1.0 - utilization * 0.7)))
+        base = self._default_size
 
         if position > 0:
-            bid_size = max(1, round(base * max(0.1, 1.0 - pos_ratio)))
-            ask_size = max(1, round(base * (1.0 + pos_ratio * 0.5)))
+            # Long: shrink bids to slow accumulation, keep asks full to facilitate unwind
+            bid_size = max(1, round(base * max(0.1, 1.0 - utilization * 0.8)))
+            ask_size = base
         elif position < 0:
-            bid_size = max(1, round(base * (1.0 + abs(pos_ratio) * 0.5)))
-            ask_size = max(1, round(base * max(0.1, 1.0 + pos_ratio)))
+            # Short: keep bids full to facilitate cover, shrink asks
+            bid_size = base
+            ask_size = max(1, round(base * max(0.1, 1.0 - utilization * 0.8)))
         else:
             bid_size = base
             ask_size = base

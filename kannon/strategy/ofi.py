@@ -59,8 +59,11 @@ class OFITracker:
             return 0.0
 
         raw = self._raw_ofi(bid, bid_qty, ask, ask_qty)
-        self._raw_history.append(raw)
-        self._ema = self.ema_alpha * raw + (1 - self.ema_alpha) * self._ema
+        # Normalise by total best-level depth so signal is comparable across thin/thick books
+        total_depth = bid_qty + ask_qty
+        normalised = raw / max(1.0, total_depth)
+        self._raw_history.append(normalised)
+        self._ema = self.ema_alpha * normalised + (1 - self.ema_alpha) * self._ema
 
         self._prev_bid = bid
         self._prev_bid_qty = bid_qty

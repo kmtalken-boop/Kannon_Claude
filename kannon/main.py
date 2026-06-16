@@ -114,6 +114,13 @@ class KalshiBot:
         if fv_result is None:
             return
 
+        # Runtime guard: cancel and skip if market has drifted near settlement since
+        # the screener's last refresh (runs every 5 minutes by default).
+        min_price = self._cfg.get("screening", {}).get("min_price_cents", 5.0)
+        if fv_result.fair_value < min_price or fv_result.fair_value > (100.0 - min_price):
+            await self._orders.cancel_ticker(ticker)
+            return
+
         position = self._positions.get(ticker, 0)
         time_remaining = self._time_remaining(ticker)
 
@@ -208,9 +215,10 @@ class KalshiBot:
                 await self._orders.cancel_all()
 
     async def _stale_order_loop(self):
-        ttl = self._cfg["market_making"].get("stale_quote_ttl_seconds", 30)
+        ttl = self._cfg["market_making"].get("stale_quote_ttl_seconds", 3600)
+        interval = max(60.0, ttl / 3.0)
         while self._running:
-            await asyncio.sleep(ttl)
+            await asyncio.sleep(interval)
             if not self._running:
                 break
             try:
@@ -269,7 +277,7 @@ class KalshiBot:
         # This captures settlement losses that the API's realized_pnl_dollars field omits —
         # Kalshi only populates that field for explicit sells, not contract expirations.
         pos_value = sum(
-            pos * self._fv_model._last_fv.get(ticker, 50.0) / 100.0
+            pos * self._fv_model.last_fair_value(ticker) / 100.0
             for ticker, pos in self._positions.items()
         )
         equity = balance.balance_dollars + pos_value
@@ -341,9 +349,12 @@ class KalshiBot:
             rate_limit_rps=kcfg.get("rate_limit_rps", 10),
         ) as client:
             self._client = client
+            mm_cfg = self._cfg["market_making"]
             self._orders = OrderManager(
                 client,
-                stale_ttl_seconds=self._cfg["market_making"].get("stale_quote_ttl_seconds", 30),
+                stale_ttl_seconds=mm_cfg.get("stale_quote_ttl_seconds", 3600),
+                price_move_threshold=mm_cfg.get("price_move_threshold_cents", 3),
+                quote_cooldown_seconds=mm_cfg.get("quote_cooldown_seconds", 10),
             )
             self._feed = MarketFeed(ws_url=kcfg["ws_url"], auth=auth)
             self._feed.on_orderbook(self._on_orderbook)
@@ -359,11 +370,18 @@ class KalshiBot:
                 self._market_refresh_loop(),
                 self._position_sync_loop(),
                 self._stale_order_loop(),
+                return_exceptions=True,
             )
             try:
                 await self._gather_task
             except asyncio.CancelledError:
                 pass
+            finally:
+                # Cancel all resting orders while the HTTP client is still open
+                if self._orders:
+                    console.print("[yellow]Cancelling all resting orders...[/yellow]")
+                    await self._orders.cancel_all()
+                console.print("[green]Shutdown complete.[/green]")
 
     async def shutdown(self):
         self._running = False
@@ -375,10 +393,6 @@ class KalshiBot:
                 await self._gather_task
             except asyncio.CancelledError:
                 pass
-        if self._orders:
-            console.print("[yellow]Cancelling all resting orders...[/yellow]")
-            await self._orders.cancel_all()
-        console.print("[green]Shutdown complete.[/green]")
 
 
 def main():

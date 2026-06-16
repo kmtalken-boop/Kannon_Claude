@@ -58,10 +58,16 @@ class MarketScreener:
         s += min(m.volume_24h / 500.0, 4.0)
         # Open interest: depth of existing market
         s += min(m.open_interest / 200.0, 3.0)
-        # Spread: prefer tight external spreads — they indicate an active, price-discovered
-        # market. Wide spreads mean uncertain/illiquid markets where adverse selection is high.
+        # Volume/OI turnover ratio: high ratio = active market with many participants.
+        # Low ratio (<0.5) = stale OI dominated by a few holders who know something.
+        if m.open_interest > 0:
+            vol_oi_ratio = m.volume_24h / m.open_interest
+            s += min(vol_oi_ratio / 2.0, 1.5)
+        # Spread: prefer tight spreads — more liquid, more fills, lower adverse selection.
+        # Score decreases linearly from 3.0 at min_spread to 0.0 at max_spread.
         if m.spread is not None:
-            s += max(0.0, 3.0 - abs(m.spread - 6) / 4.0)  # peaks at 6¢, falls off
+            spread_range = max(1, self.max_spread_cents - self.min_spread_cents)
+            s += max(0.0, 3.0 * (1.0 - (m.spread - self.min_spread_cents) / spread_range))
         # Prefer mid-range prices — maximum variance, most uncertainty to earn from
         if m.mid_price is not None:
             uncertainty = min(m.mid_price, 100 - m.mid_price) / 50.0

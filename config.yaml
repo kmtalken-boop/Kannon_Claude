@@ -103,6 +103,15 @@ market_making:
   stale_quote_ttl_seconds: 3600  # 1 hour — prediction market orders should rest for hours
   position_sync_interval_seconds: 30
 
+  # Order manager tuning (configurable, defaults used if omitted)
+  price_move_threshold_cents: 3   # minimum price change before replacing an order
+  quote_cooldown_seconds: 10      # minimum seconds between re-quotes per market
+
+  # Pin-risk extra spread near 0 or 100 cents.
+  # Adds k_pin / sqrt(min(p, 1-p)) half-cents of extra spread.
+  # At 5¢ (p=0.05): adds ~4.5×k_pin.  Set to 0 to disable.
+  pin_risk_coeff: 0.0
+
 # ── Risk Management ───────────────────────────────────────────────────────────
 # max_daily_loss_dollars: halt if mark-to-market equity drops more than this
 # from session start. Set to ~10-15% of account balance.

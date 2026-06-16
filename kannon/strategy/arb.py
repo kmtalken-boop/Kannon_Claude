@@ -81,8 +81,11 @@ class ArbScanner:
         # MECE check: for a valid exhaustive series, sum of midpoints should be ≈ 100¢.
         # A sum far above 100 means markets are independent (e.g. "will X attend?")
         # or cumulative thresholds — NOT mutually exclusive, NOT a real arbitrage.
-        # Window (50, 160): handles up to ~5 outcomes with ≤20¢ spreads while rejecting
-        # attendance/cumulative markets where sum_mids >> 200.
+        # Lower bound of 50 handles wide-spread buy_all arb where low bids pull mids down
+        # (sum_mids can be ~72 for 3-outcome series with low bids). Upper bound of 160
+        # handles sell_all arb where high bids pull mids up (sum_mids can be ~135 for
+        # 3-outcome series with 10¢ spreads). Still rejects attendance/cumulative markets
+        # where sum_mids >> 200.
         sum_mids = sum((m.yes_bid + m.yes_ask) / 2.0 for m in quoted)
         if not (50.0 < sum_mids < 160.0):
             return []
@@ -116,9 +119,11 @@ class ArbScanner:
         total_bid = sum(m.yes_bid for m in quoted)
         if total_bid > 100:
             gross = total_bid - 100
-            # Selling all: one leg pays out $1, fee on winning side's profit
-            max_bid = max(m.yes_bid for m in quoted)
-            worst_case_fee = self._ev.cfg.fee_rate * max_bid
+            # Fee on sell_all: each NO-resolving leg's bid_price is subject to fee.
+            # The YES-resolving leg is a loss — no fee on losses.
+            # Worst case = smallest bid resolves YES → we pay fees on all other legs.
+            min_bid = min(m.yes_bid for m in quoted)
+            worst_case_fee = self._ev.cfg.fee_rate * (total_bid - min_bid)
             net = gross - worst_case_fee
             if net >= self.min_net:
                 opps.append(ArbOpportunity(

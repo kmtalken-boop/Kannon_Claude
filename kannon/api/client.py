@@ -43,6 +43,7 @@ class KalshiClient:
         self._rps = rate_limit_rps
         self._min_interval = 1.0 / rate_limit_rps
         self._last_request: float = 0.0
+        self._throttle_lock = asyncio.Lock()
         self._http: Optional[httpx.AsyncClient] = None
 
     async def __aenter__(self) -> "KalshiClient":
@@ -53,11 +54,12 @@ class KalshiClient:
         await self._http.aclose()
 
     async def _throttle(self):
-        now = time.monotonic()
-        wait = self._min_interval - (now - self._last_request)
-        if wait > 0:
-            await asyncio.sleep(wait)
-        self._last_request = time.monotonic()
+        async with self._throttle_lock:
+            now = time.monotonic()
+            wait = self._min_interval - (now - self._last_request)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_request = time.monotonic()
 
     async def _request(self, method: str, path: str, **kwargs) -> Any:
         await self._throttle()

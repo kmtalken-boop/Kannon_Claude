@@ -133,6 +133,10 @@ class BacktestEngine:
             if quote:
                 current_bid = quote.bid_price
                 current_ask = quote.ask_price
+            else:
+                # No valid quote (VPIN toxic, near-settled, etc.) — pull virtual quotes
+                current_bid = None
+                current_ask = None
 
             # ── Fill detection ────────────────────────────────────────────────
             if current_bid is not None and current_ask is not None:

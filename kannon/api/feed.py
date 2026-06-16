@@ -107,8 +107,6 @@ class MarketFeed:
 
     def stop(self):
         self._running = False
-        if self._ws:
-            asyncio.ensure_future(self._ws.close())
 
     # ── Wire protocol ─────────────────────────────────────────────────────────
 
@@ -126,7 +124,7 @@ class MarketFeed:
             await self._ws.send(json.dumps(msg))
 
     async def _unsubscribe_ws(self, tickers: list[str]):
-        for channel in ("orderbook_delta", "trade"):
+        for channel in ("orderbook_snapshot", "orderbook_delta", "trade"):
             msg = {
                 "id": self._next_id(),
                 "cmd": "unsubscribe",

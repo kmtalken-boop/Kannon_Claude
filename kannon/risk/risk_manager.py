@@ -67,6 +67,8 @@ class RiskManager:
         if today != self.status.daily_start:
             self.status.daily_pnl = 0.0
             self.status.daily_start = today
+            self.status.trading_enabled = True
+            self.status.halt_reason = ""
 
         self.status.daily_pnl += delta
 

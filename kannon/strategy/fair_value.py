@@ -134,6 +134,10 @@ class FairValueModel:
             external_anchor=external_anchor,
         )
 
+    def last_fair_value(self, ticker: str) -> float:
+        """Return the last computed fair value for a ticker, or 50¢ if unknown."""
+        return self._last_fv.get(ticker, 50.0)
+
     def cleanup_ticker(self, ticker: str):
         """Remove per-ticker state when a market is deselected."""
         self._mid_history.pop(ticker, None)
