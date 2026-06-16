@@ -78,11 +78,11 @@ class Market(BaseModel):
             data["yes_bid"] = _to_cents(data.get("yes_bid_dollars"))
         if data.get("yes_ask") is None:
             data["yes_ask"] = _to_cents(data.get("yes_ask_dollars"))
-        if not data.get("volume_24h"):
+        if data.get("volume_24h") is None:
             data["volume_24h"] = _fp_int(data.get("volume_24h_fp"))
-        if not data.get("volume"):
+        if data.get("volume") is None:
             data["volume"] = _fp_int(data.get("volume_fp"))
-        if not data.get("open_interest"):
+        if data.get("open_interest") is None:
             data["open_interest"] = _fp_int(data.get("open_interest_fp"))
         if data.get("last_price") is None:
             data["last_price"] = _to_cents(data.get("last_price_dollars"))
@@ -169,17 +169,17 @@ class Order(BaseModel):
         if not isinstance(data, dict):
             return data
         # yes_price_dollars: "0.3700" (probability string) → yes_price: 37 (cents)
-        if not data.get("yes_price"):
+        if data.get("yes_price") is None:
             raw = data.get("yes_price_dollars")
             if raw is not None:
                 data["yes_price"] = int(round(float(raw) * 100))
         # initial_count_fp: "1.00" → count (original order quantity)
+        # Only fall back to initial_count_fp, not remaining_count — partially filled orders
+        # have remaining_count < count, using it would corrupt the original order size.
         if not data.get("count"):
-            for key in ("initial_count_fp", "remaining_count_fp", "remaining_count"):
-                raw = data.get(key)
-                if raw:
-                    data["count"] = int(float(raw))
-                    break
+            raw = data.get("initial_count_fp")
+            if raw:
+                data["count"] = int(float(raw))
         # remaining_count_fp: "1.00" → remaining_count
         if not data.get("remaining_count"):
             raw = data.get("remaining_count_fp")
@@ -213,12 +213,12 @@ class Position(BaseModel):
                     data["market_exposure"] = int(float(raw))
                     break
         # realized_pnl_dollars: "0.000000" (already in dollars)
-        if not data.get("realized_pnl"):
+        if data.get("realized_pnl") is None:
             raw = data.get("realized_pnl_dollars") or data.get("realized_pnl_fp")
             if raw is not None:
                 data["realized_pnl"] = float(raw)
         # fees_paid_dollars: "0.000000"
-        if not data.get("fees_paid"):
+        if data.get("fees_paid") is None:
             raw = data.get("fees_paid_dollars") or data.get("fees_paid_fp")
             if raw is not None:
                 data["fees_paid"] = float(raw)
@@ -226,6 +226,8 @@ class Position(BaseModel):
 
 
 class Balance(BaseModel):
+    model_config = {"extra": "ignore"}
+
     balance: int = 0            # cents
     payout: int = 0
 

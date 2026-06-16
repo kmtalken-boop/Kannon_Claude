@@ -134,6 +134,11 @@ class FairValueModel:
             external_anchor=external_anchor,
         )
 
+    def cleanup_ticker(self, ticker: str):
+        """Remove per-ticker state when a market is deselected."""
+        self._mid_history.pop(ticker, None)
+        self._last_fv.pop(ticker, None)
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _empty_book(self, fv: float, ticker: str) -> FVResult:

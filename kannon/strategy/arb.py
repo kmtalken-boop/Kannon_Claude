@@ -78,11 +78,13 @@ class ArbScanner:
         if len(quoted) < 2:
             return []
 
-        # MECE check: for a valid exhaustive series, sum of midpoints must be ≈ 100¢.
+        # MECE check: for a valid exhaustive series, sum of midpoints should be ≈ 100¢.
         # A sum far above 100 means markets are independent (e.g. "will X attend?")
         # or cumulative thresholds — NOT mutually exclusive, NOT a real arbitrage.
+        # Window (50, 160): handles up to ~5 outcomes with ≤20¢ spreads while rejecting
+        # attendance/cumulative markets where sum_mids >> 200.
         sum_mids = sum((m.yes_bid + m.yes_ask) / 2.0 for m in quoted)
-        if not (70.0 < sum_mids < 130.0):
+        if not (50.0 < sum_mids < 160.0):
             return []
 
         opps = []

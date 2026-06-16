@@ -94,14 +94,21 @@ class MarketFeed:
             except (websockets.exceptions.ConnectionClosed, OSError) as exc:
                 logger.warning(f"WebSocket disconnected ({exc}), reconnecting in 5s")
                 self._ws = None
+                # Clear stale books so the strategy doesn't act on outdated state
+                for t in list(self._subscriptions):
+                    self._books.pop(t, None)
                 await asyncio.sleep(5)
             except Exception as exc:
                 logger.error(f"WebSocket error: {exc}", exc_info=True)
                 self._ws = None
+                for t in list(self._subscriptions):
+                    self._books.pop(t, None)
                 await asyncio.sleep(5)
 
     def stop(self):
         self._running = False
+        if self._ws:
+            asyncio.ensure_future(self._ws.close())
 
     # ── Wire protocol ─────────────────────────────────────────────────────────
 
@@ -110,7 +117,7 @@ class MarketFeed:
         return self._msg_id
 
     async def _subscribe_ws(self, tickers: list[str]):
-        for channel in ("orderbook_delta", "trade"):
+        for channel in ("orderbook_snapshot", "orderbook_delta", "trade"):
             msg = {
                 "id": self._next_id(),
                 "cmd": "subscribe",

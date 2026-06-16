@@ -62,8 +62,9 @@ class KalshiClient:
     async def _request(self, method: str, path: str, **kwargs) -> Any:
         await self._throttle()
         url = self.base_url + path
-        headers = self.auth.sign_request(method, self._base_path + path)
+        full_path = self._base_path + path
         for attempt in range(5):
+            headers = self.auth.sign_request(method, full_path)
             resp = await self._http.request(method, url, headers=headers, **kwargs)
             if resp.status_code == 429:
                 wait = 2.0 ** attempt
@@ -193,14 +194,22 @@ class KalshiClient:
     # ── Portfolio ─────────────────────────────────────────────────────────────
 
     async def get_positions(self) -> list[Position]:
-        data = await self._request("GET", "/portfolio/positions")
-        positions = []
-        for p in data.get("market_positions", []):
-            try:
-                positions.append(Position(**p))
-            except Exception as exc:
-                logger.debug(f"Skipping position {p.get('ticker', '?')}: {exc}")
-        return positions
+        all_positions: list[Position] = []
+        cursor: Optional[str] = None
+        while True:
+            params: dict[str, Any] = {"limit": 100}
+            if cursor:
+                params["cursor"] = cursor
+            data = await self._request("GET", "/portfolio/positions", params=params)
+            for p in data.get("market_positions", []):
+                try:
+                    all_positions.append(Position(**p))
+                except Exception as exc:
+                    logger.debug(f"Skipping position {p.get('ticker', '?')}: {exc}")
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+        return all_positions
 
     async def get_balance(self) -> Balance:
         data = await self._request("GET", "/portfolio/balance")

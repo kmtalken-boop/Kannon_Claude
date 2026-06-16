@@ -109,8 +109,8 @@ class MarketMakerStrategy:
         bid_f = reservation - half_spread
         ask_f = reservation + half_spread
 
-        bid_price = max(1, min(98, round(bid_f)))
-        ask_price = max(bid_price + 2, min(99, round(ask_f)))   # enforce ≥2¢ spread
+        bid_price = max(1, min(97, round(bid_f)))
+        ask_price = max(bid_price + 2, min(99, round(ask_f)))   # enforce ≥2¢ spread; bid≤97 ensures ask≤99
 
         # ── Fee-adjusted minimum spread enforcement ────────────────────────────
         # Both sides must be EV+ after fees or we don't quote

@@ -80,6 +80,7 @@ class KalshiBot:
         self._client: KalshiClient | None = None
         self._feed: MarketFeed | None = None
         self._orders: OrderManager | None = None
+        self._gather_task: asyncio.Task | None = None
 
     # ── Feed callbacks ────────────────────────────────────────────────────────
 
@@ -88,6 +89,9 @@ class KalshiBot:
             return
 
         ticker = ob.ticker
+        if ticker not in self._active_tickers:
+            return
+
         ofi = self._ofi.setdefault(ticker, OFITracker(**self._cfg.get("ofi", {})))
         vpin = self._vpin.get(ticker)
 
@@ -145,6 +149,8 @@ class KalshiBot:
 
     async def _on_trade(self, event: TradeEvent):
         """Feed trade events into the VPIN tracker for this market."""
+        if event.ticker not in self._active_tickers:
+            return
         ob = self._feed.get_book(event.ticker)
         if ob is None:
             return
@@ -230,6 +236,7 @@ class KalshiBot:
             self._ofi.pop(t, None)
             self._vpin.pop(t, None)
             self._market_close_times.pop(t, None)
+            self._fv_model.cleanup_ticker(t)
         if old - new:
             await self._feed.unsubscribe(list(old - new))
         if new - old:
@@ -347,17 +354,27 @@ class KalshiBot:
             await self._sync_positions()
             await self._reconcile_open_orders()
 
-            await asyncio.gather(
+            self._gather_task = asyncio.gather(
                 self._feed.run(),
                 self._market_refresh_loop(),
                 self._position_sync_loop(),
                 self._stale_order_loop(),
             )
+            try:
+                await self._gather_task
+            except asyncio.CancelledError:
+                pass
 
     async def shutdown(self):
         self._running = False
         if self._feed:
             self._feed.stop()
+        if self._gather_task and not self._gather_task.done():
+            self._gather_task.cancel()
+            try:
+                await self._gather_task
+            except asyncio.CancelledError:
+                pass
         if self._orders:
             console.print("[yellow]Cancelling all resting orders...[/yellow]")
             await self._orders.cancel_all()
@@ -376,8 +393,7 @@ def main():
 
     def _handle_signal(sig, _frame):
         console.print(f"\n[yellow]Signal {sig.name} — shutting down...[/yellow]")
-        loop.create_task(bot.shutdown())
-        loop.call_later(8, loop.stop)
+        loop.call_soon_threadsafe(lambda: loop.create_task(bot.shutdown()))
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)

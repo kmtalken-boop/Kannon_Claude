@@ -38,7 +38,7 @@ class OrderManager:
     Uses cancel-and-replace when the desired price changes by more than threshold.
     """
 
-    def __init__(self, client: KalshiClient, stale_ttl_seconds: float = 30.0):
+    def __init__(self, client: KalshiClient, stale_ttl_seconds: float = 3600.0):
         self._client = client
         self._stale_ttl = stale_ttl_seconds
         self._quotes: dict[str, _MarketQuotes] = {}
@@ -86,8 +86,8 @@ class OrderManager:
                 for attr in ("bid", "ask"):
                     resting: Optional[_RestingOrder] = getattr(mq, attr)
                     if resting and (now - resting.placed_at) > self._stale_ttl:
-                        await self._cancel(resting.order_id)
-                        setattr(mq, attr, None)
+                        if await self._cancel(resting.order_id):
+                            setattr(mq, attr, None)
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
@@ -114,9 +114,11 @@ class OrderManager:
         ):
             return
 
-        # Cancel old order
+        # Cancel old order — only clear tracking if the cancel actually succeeded
         if resting:
-            await self._cancel(resting.order_id)
+            cancelled = await self._cancel(resting.order_id)
+            if not cancelled:
+                return  # leave mq unchanged; avoid placing a duplicate order
             if is_bid:
                 mq.bid = None
             else:
@@ -154,10 +156,14 @@ class OrderManager:
         except KalshiAPIError as exc:
             logger.error(f"Order placement failed on {quote.ticker}: {exc}")
 
-    async def _cancel(self, order_id: str):
+    async def _cancel(self, order_id: str) -> bool:
+        """Returns True if the order is gone (cancelled or already filled/not found)."""
         try:
             await self._client.cancel_order(order_id)
             logger.debug(f"Cancelled order {order_id}")
+            return True
         except KalshiAPIError as exc:
-            if exc.status_code != 404:   # 404 = already filled/cancelled
-                logger.warning(f"Cancel failed {order_id}: {exc}")
+            if exc.status_code == 404:   # already filled or cancelled — order is gone
+                return True
+            logger.warning(f"Cancel failed {order_id}: {exc}")
+            return False

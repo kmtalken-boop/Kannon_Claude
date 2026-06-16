@@ -47,6 +47,11 @@ class RiskManager:
         More accurate than record_pnl() deltas because it captures settlement losses
         that the API's realized_pnl_dollars field omits.
         """
+        today = date.today()
+        if today != self.status.daily_start:
+            self.status.daily_start = today
+            self.status.trading_enabled = True
+            self.status.halt_reason = ""
         self.status.daily_pnl = pnl
         if self._halt_on_loss and pnl < -self._max_daily_loss:
             if self.status.trading_enabled:

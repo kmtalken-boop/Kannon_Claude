@@ -37,9 +37,14 @@ class TestFairValue:
         assert result is not None
         assert result.fair_value > result.mid
 
-    def test_no_book_returns_none(self):
+    def test_no_book_returns_fallback(self):
+        # Empty book returns a FVResult at 50¢ prior with confidence=0 so the
+        # strategy quotes wide (target_half_spread) rather than refusing to quote.
         ob = _ob("X", [], [])
-        assert self.model.compute(ob) is None
+        result = self.model.compute(ob)
+        assert result is not None
+        assert result.confidence == 0.0
+        assert result.fair_value == 50.0
 
     def test_one_sided_book(self):
         ob = _ob("X", [(50, 100)], [])

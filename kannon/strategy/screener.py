@@ -43,7 +43,8 @@ class MarketScreener:
                 return False, f"near-settled (mid={mid:.1f}¢)"
         if m.close_time:
             now = datetime.now(timezone.utc)
-            days_left = (m.close_time - now).total_seconds() / 86400
+            ct = m.close_time.replace(tzinfo=timezone.utc) if m.close_time.tzinfo is None else m.close_time
+            days_left = (ct - now).total_seconds() / 86400
             if days_left <= 0:
                 return False, "expired"
             if days_left > self.max_days_to_expiry:
