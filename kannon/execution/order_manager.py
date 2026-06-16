@@ -4,11 +4,14 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from ..api.client import KalshiClient, KalshiAPIError
 from ..api.models import OrderAction, OrderType, Side
 from ..strategy.market_maker import Quote
+
+if TYPE_CHECKING:
+    from ..analytics.fill_tracker import FillTracker
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +52,13 @@ class OrderManager:
         stale_ttl_seconds: float = 3600.0,
         price_move_threshold: int = _DEFAULT_PRICE_MOVE_THRESHOLD,
         quote_cooldown_seconds: float = _DEFAULT_QUOTE_COOLDOWN_SECONDS,
+        fill_tracker: "Optional[FillTracker]" = None,
     ):
         self._client = client
         self._stale_ttl = stale_ttl_seconds
         self._price_move_threshold = price_move_threshold
         self._quote_cooldown = quote_cooldown_seconds
+        self._fill_tracker = fill_tracker
         self._quotes: dict[str, _MarketQuotes] = {}
         self._quotes_lock = asyncio.Lock()  # protects _quotes dict only
 
@@ -173,6 +178,17 @@ class OrderManager:
                 f"QUOTE {side_str} {quote.ticker} {new_price}¢×{new_size} "
                 f"(fv={quote.fair_value:.1f}¢ spread={quote.ask_price - quote.bid_price}¢)"
             )
+            if self._fill_tracker:
+                self._fill_tracker.log_order_placed(
+                    ticker=quote.ticker,
+                    side="bid" if is_bid else "ask",
+                    price_cents=new_price,
+                    size=new_size,
+                    fair_value=quote.fair_value,
+                    ev_dollars=quote.ev_bid if is_bid else quote.ev_ask,
+                    spread_cents=quote.ask_price - quote.bid_price,
+                    order_id=order.order_id,
+                )
         except KalshiAPIError as exc:
             logger.error(f"Order placement failed on {quote.ticker}: {exc}")
 

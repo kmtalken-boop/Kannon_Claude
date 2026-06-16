@@ -14,12 +14,14 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
 
+from .analytics.fill_tracker import FillTracker
 from .api.auth import KalshiAuth
 from .api.client import KalshiClient
 from .api.feed import MarketFeed, TradeEvent
 from .api.models import Orderbook
 from .execution.order_manager import OrderManager
 from .risk.risk_manager import RiskManager
+from .signals.router import ExternalSignalRouter
 from .strategy.arb import ArbScanner
 from .strategy.fair_value import FairValueModel
 from .strategy.fees import FeeConfig, EVCalculator
@@ -77,6 +79,19 @@ class KalshiBot:
         self._daily_start_equity: float = 0.0
         self._running = False
 
+        # External signals (optional — gracefully disabled if signals section absent)
+        signals_cfg = cfg.get("signals", {})
+        self._signal_router: ExternalSignalRouter | None = (
+            ExternalSignalRouter(signals_cfg) if signals_cfg.get("enabled", True) else None
+        )
+
+        # Fill tracker (optional — disabled if analytics.enabled = false)
+        analytics_cfg = cfg.get("analytics", {})
+        self._fill_tracker: FillTracker | None = None
+        if analytics_cfg.get("enabled", True):
+            db_path = analytics_cfg.get("db_path", "logs/fills.db")
+            self._fill_tracker = FillTracker(db_path)
+
         self._client: KalshiClient | None = None
         self._feed: MarketFeed | None = None
         self._orders: OrderManager | None = None
@@ -110,7 +125,22 @@ class KalshiBot:
                 logger.warning(f"VPIN TOXIC on {ticker} — quotes pulled (VPIN={vpin.value:.2f})")
                 return
 
-        fv_result = self._fv_model.compute(ob, ofi_adjustment_cents=ofi_adj)
+        # External anchor (Binance BTC/ETH price, CME FedWatch, etc.)
+        external_anchor: float | None = None
+        external_weight: float = 0.5
+        if self._signal_router:
+            # Convert normalised time_remaining (7d window) back to years
+            t_years = self._time_remaining(ticker) * 7.0 / 365.0
+            anchor_result = self._signal_router.get_anchor(ticker, t_years)
+            if anchor_result:
+                external_anchor, external_weight = anchor_result
+
+        fv_result = self._fv_model.compute(
+            ob,
+            ofi_adjustment_cents=ofi_adj,
+            external_anchor=external_anchor,
+            external_weight=external_weight,
+        )
         if fv_result is None:
             return
 
@@ -290,13 +320,24 @@ class KalshiBot:
         daily_pnl = equity - self._daily_start_equity
         self._risk.set_daily_pnl(daily_pnl)
 
+        if self._fill_tracker:
+            self._fill_tracker.log_equity_snapshot(
+                balance=balance.balance_dollars,
+                pos_value=pos_value,
+                equity=equity,
+                daily_pnl=daily_pnl,
+            )
+
         risk = self._risk.summary()
+        ext_prices = self._signal_router.spot_prices() if self._signal_router else {}
+        price_str = "  ".join(f"{k}=${v:,.0f}" for k, v in ext_prices.items())
         logger.info(
             f"Balance: ${balance.balance_dollars:.2f} | "
             f"Equity: ${equity:.2f} | "
             f"Daily P&L: ${daily_pnl:+.2f} | "
             f"Markets: {len(self._active_tickers)} | "
             f"Delta: {risk['total_delta']}"
+            + (f" | {price_str}" if price_str else "")
         )
 
     async def _reconcile_open_orders(self):
@@ -355,11 +396,15 @@ class KalshiBot:
                 stale_ttl_seconds=mm_cfg.get("stale_quote_ttl_seconds", 3600),
                 price_move_threshold=mm_cfg.get("price_move_threshold_cents", 3),
                 quote_cooldown_seconds=mm_cfg.get("quote_cooldown_seconds", 10),
+                fill_tracker=self._fill_tracker,
             )
             self._feed = MarketFeed(ws_url=kcfg["ws_url"], auth=auth)
             self._feed.on_orderbook(self._on_orderbook)
             self._feed.on_trade(self._on_trade)
             self._running = True
+
+            if self._signal_router:
+                await self._signal_router.start()
 
             await self._refresh_markets()
             await self._sync_positions()
@@ -387,12 +432,16 @@ class KalshiBot:
         self._running = False
         if self._feed:
             self._feed.stop()
+        if self._signal_router:
+            await self._signal_router.stop()
         if self._gather_task and not self._gather_task.done():
             self._gather_task.cancel()
             try:
                 await self._gather_task
             except asyncio.CancelledError:
                 pass
+        if self._fill_tracker:
+            self._fill_tracker.close()
 
 
 def main():

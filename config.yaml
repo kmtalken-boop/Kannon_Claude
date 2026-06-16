@@ -128,6 +128,38 @@ risk:
 arb:
   min_net_profit_cents: 1.5   # minimum after-fee profit to flag an opportunity
 
+# ── External Signals ──────────────────────────────────────────────────────────
+# Provides live data anchors for financial-outcome and FOMC contracts.
+# All sources are free and require no API key.
+#
+# Binance WebSocket: streams real-time BTC/ETH spot prices.
+#   Used for KXBTC-* and KXETH-* contracts via binary Black-Scholes.
+#   anchor_weight 0.55 = blend 55% Binance BS + 45% orderbook microstructure.
+#   Set to false to disable if running air-gapped / without internet.
+#
+# FedWatch: polls CME FedWatch for FOMC rate probabilities every 10 minutes.
+#   Used for FOMC-* and KXFED-* contracts.
+#   anchor_weight 0.70 = high confidence (FedWatch is the market consensus).
+signals:
+  enabled: true
+  binance:
+    enabled: true       # streams BTC/ETH via wss://stream.binance.com
+  fedwatch:
+    enabled: true
+    poll_interval_seconds: 600   # CME FedWatch — 10-minute poll is plenty
+
+# ── Analytics (Fill Tracker) ──────────────────────────────────────────────────
+# Logs every order placed to a SQLite database for post-session P&L analysis.
+# Tracks: ticker, side, price, size, fair_value at placement, EV, order_id.
+# Also logs mark-to-market equity snapshots every position_sync_interval_seconds.
+#
+# To inspect after a session:
+#   sqlite3 logs/fills.db "SELECT * FROM orders ORDER BY ts DESC LIMIT 20;"
+#   sqlite3 logs/fills.db "SELECT * FROM equity_snapshots ORDER BY ts DESC LIMIT 10;"
+analytics:
+  enabled: true
+  db_path: logs/fills.db
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging:
   level: INFO
