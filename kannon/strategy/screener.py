@@ -18,6 +18,10 @@ class MarketScreener:
         self.min_price_cents: float = cfg.get("min_price_cents", 3)
         self.max_active: int = cfg.get("max_markets_active", 10)
         self.excluded_prefixes: list[str] = cfg.get("excluded_ticker_prefixes", [])
+        # Demo mode: accept markets without existing quotes.
+        # On live markets this is UNSAFE — no existing quote = unknown true probability
+        # + high adverse selection. Set to false on any production account.
+        self.allow_unquoted: bool = cfg.get("allow_unquoted_markets", False)
 
     def passes(self, m: Market) -> tuple[bool, str]:
         if m.status.value not in ("open", "active"):
@@ -25,17 +29,21 @@ class MarketScreener:
         for prefix in self.excluded_prefixes:
             if m.ticker.startswith(prefix):
                 return False, f"excluded prefix ({prefix})"
-        if m.yes_bid is None or m.yes_ask is None:
-            return False, "no quotes"
+        has_quotes = m.yes_bid is not None and m.yes_ask is not None
+        if not has_quotes:
+            if not self.allow_unquoted:
+                return False, "no quotes"
+            # Unquoted market accepted: FV will fall back to 50¢ prior, confidence=0
         if m.volume_24h < self.min_volume_24h:
             return False, f"volume {m.volume_24h} < {self.min_volume_24h}"
         if m.open_interest < self.min_open_interest:
             return False, f"OI {m.open_interest} < {self.min_open_interest}"
-        spread = m.yes_ask - m.yes_bid
-        if spread < self.min_spread_cents:
-            return False, f"spread {spread}¢ < {self.min_spread_cents}¢"
-        if spread > self.max_spread_cents:
-            return False, f"spread too wide ({spread}¢ > {self.max_spread_cents}¢)"
+        if has_quotes:
+            spread = m.yes_ask - m.yes_bid
+            if spread < self.min_spread_cents:
+                return False, f"spread {spread}¢ < {self.min_spread_cents}¢"
+            if spread > self.max_spread_cents:
+                return False, f"spread too wide ({spread}¢ > {self.max_spread_cents}¢)"
         mid = m.mid_price
         if mid is not None:
             distance = min(mid, 100 - mid)

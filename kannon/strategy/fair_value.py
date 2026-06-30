@@ -40,8 +40,9 @@ class FairValueModel:
         self._depth_levels: int = cfg.get("depth_levels", 5)
         self._vol_lookback: int = cfg.get("volatility_lookback", 20)
         self._sigma_base: float = cfg.get("sigma_base", 1.0)
-        # Per-ticker mid history for rolling vol estimation
+        # Per-ticker state (deque kept for future debugging; vol tracked as EMA)
         self._mid_history: dict[str, deque] = {}
+        self._vol_ema: dict[str, float] = {}   # incremental EMA of |Δmid|
         # Last computed FV per ticker — used as fallback on empty books
         self._last_fv: dict[str, float] = {}
 
@@ -108,10 +109,17 @@ class FairValueModel:
 
         blended_fv = max(1.0, min(99.0, blended_fv))
 
-        # ── Rolling volatility ────────────────────────────────────────────────
+        # ── Rolling volatility (incremental EMA — avoids O(N) list alloc) ──────
         hist = self._mid_history.setdefault(ob.ticker, deque(maxlen=self._vol_lookback))
+        prev_mid = hist[-1] if hist else mid
         hist.append(mid)
-        vol = self._rolling_vol(hist)
+        if len(hist) >= 2:
+            tick_vol = abs(mid - prev_mid)
+            prior_ema = self._vol_ema.get(ob.ticker, tick_vol)
+            vol = 0.1 * tick_vol + 0.9 * prior_ema
+            self._vol_ema[ob.ticker] = vol
+        else:
+            vol = 0.0
 
         # ── Beta-process effective volatility ─────────────────────────────────
         p = blended_fv / 100.0
@@ -141,6 +149,7 @@ class FairValueModel:
     def cleanup_ticker(self, ticker: str):
         """Remove per-ticker state when a market is deselected."""
         self._mid_history.pop(ticker, None)
+        self._vol_ema.pop(ticker, None)
         self._last_fv.pop(ticker, None)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
@@ -168,9 +177,3 @@ class FairValueModel:
         fallback = self._last_fv.get(ticker, 50.0)
         return self._empty_book(fallback, ticker)
 
-    @staticmethod
-    def _rolling_vol(hist: deque) -> float:
-        if len(hist) < 4:
-            return 0.0
-        diffs = [abs(hist[i] - hist[i - 1]) for i in range(1, len(hist))]
-        return sum(diffs) / len(diffs)

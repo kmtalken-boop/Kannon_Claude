@@ -107,7 +107,9 @@ class KalshiBot:
         if ticker not in self._active_tickers:
             return
 
-        ofi = self._ofi.setdefault(ticker, OFITracker(**self._cfg.get("ofi", {})))
+        if ticker not in self._ofi:
+            self._ofi[ticker] = OFITracker(**self._cfg.get("ofi", {}))
+        ofi = self._ofi[ticker]
         vpin = self._vpin.get(ticker)
 
         # OFI: real-time fair value adjustment
@@ -195,11 +197,9 @@ class KalshiBot:
         if mid is None:
             return
 
-        vpin = self._vpin.setdefault(
-            event.ticker,
-            VPINTracker(**self._cfg.get("vpin", {}))
-        )
-        vpin.on_trade(event.price_cents, event.count, mid)
+        if event.ticker not in self._vpin:
+            self._vpin[event.ticker] = VPINTracker(**self._cfg.get("vpin", {}))
+        self._vpin[event.ticker].on_trade(event.price_cents, event.count, mid)
 
     def _time_remaining(self, ticker: str) -> float:
         """Normalised time remaining [0,1] based on stored market close_time."""

@@ -107,8 +107,7 @@ class MarketMakerStrategy:
         if self._k_pin > 0:
             distance = min(fair_value, 100.0 - fair_value) / 100.0  # [0, 0.5]
             if distance > 0:
-                import math as _math
-                pin_extra = self._k_pin / _math.sqrt(distance)
+                pin_extra = self._k_pin / math.sqrt(distance)
                 half_spread = max(half_spread, pin_extra)
 
         # ── Inventory adjustment ───────────────────────────────────────────────

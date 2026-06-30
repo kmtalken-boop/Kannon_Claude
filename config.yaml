@@ -26,15 +26,38 @@ fees:
   flat_fee_cents: 0.0         # Per-contract flat fee (0 on Kalshi)
 
 # ── Market Screening ──────────────────────────────────────────────────────────
+#
+# DEMO vs LIVE TUNING GUIDE
+# ──────────────────────────
+# Demo environment lacks real market makers, so most markets have no existing
+# bid/ask quotes. The following settings are tuned for demo:
+#
+#   allow_unquoted_markets: true   → accept markets with empty books (bot quotes
+#                                    at 50¢ prior FV, confidence=0, target spread)
+#   max_spread_cents: 50           → accept wide demo spreads (live: use 15-20)
+#   min_spread_cents: 1            → demo books are often 1¢ apart (live: use 3-5)
+#   min_price_cents: 3             → demo markets sometimes sit at extremes
+#
+# When going LIVE, set:
+#   allow_unquoted_markets: false  (CRITICAL — never quote truly uncharted markets)
+#   max_spread_cents: 20           (tighten to avoid wide adverse-selection markets)
+#   min_spread_cents: 3
+#   min_volume_24h: 100+
+#   min_open_interest: 50+
+#
 screening:
-  min_volume_24h: 0           # demo markets have minimal volume — screen by OI/spread only
+  min_volume_24h: 0           # demo markets have no volume — accept all
   min_open_interest: 0
   max_time_to_expiry_days: 30
-  min_spread_cents: 2
-  max_spread_cents: 20        # reject illiquid markets with >20¢ spread (adverse selection)
+  min_spread_cents: 1         # demo: accept 1¢ spreads; live: raise to 3-5
+  max_spread_cents: 50        # demo: accept wide spreads; live: lower to 15-20
   max_markets_active: 10
-  min_price_cents: 5          # skip near-settled (< 5¢ from 0 or 100)
+  min_price_cents: 3          # skip near-settled (< 3¢ from 0 or 100)
   market_refresh_interval_seconds: 300
+  # Demo only: accept markets with no existing bid/ask quotes.
+  # The bot falls back to 50¢ fair value with confidence=0 (uses target_half_spread).
+  # NEVER enable this on live — no quotes = no price signal = pure adverse selection.
+  allow_unquoted_markets: true
   # In-play sports prop markets: informed traders watching live games instantly
   # pick off any stale quote. Never quote these as an uninformed market maker.
   excluded_ticker_prefixes:
@@ -82,11 +105,27 @@ vpin:
   n_buckets: 20               # lookback window (number of buckets)
 
 # ── Market Making (Avellaneda-Stoikov) ───────────────────────────────────────
+#
+# DEMO vs LIVE TUNING GUIDE
+# ──────────────────────────
+# On demo the bot quotes into empty books using a 50¢ prior (confidence=0),
+# so A-S formula gives zero signal and we fall back to target_half_spread_cents.
+# Wider spreads are correct here: we have no FV signal, so take more edge.
+#
+# When going LIVE, tighten these:
+#   target_half_spread_cents: 3.0   (tighter = more fills, less edge per fill)
+#   min_half_spread_cents: 2.0
+#   risk_aversion: 0.1              (calibrate to your actual fill rate)
+#   order_depth_k: 5.0              (lower = wider A-S spread in liquid books)
+#   default_size_contracts: 3-5     (increase as you build confidence)
+#
 market_making:
   # Spread parameters
-  target_half_spread_cents: 5.0   # 10¢ total spread minimum for uninformed quoting
-  min_half_spread_cents: 3.0
-  max_half_spread_cents: 20.0
+  # Demo: wide target spread since we're quoting blind (50¢ prior, no orderbook signal).
+  # Live: tighten target_half_spread_cents to 3-4 once you have real FV signal.
+  target_half_spread_cents: 8.0   # demo: 16¢ total spread; live: 6-8¢
+  min_half_spread_cents: 5.0      # demo: never quote tighter than 10¢; live: 3-4¢
+  max_half_spread_cents: 25.0     # demo: allow up to 50¢; live: 30¢
 
   # Avellaneda-Stoikov parameters
   # Calibrated for binary contracts in [0,1] probability space.
@@ -95,8 +134,8 @@ market_making:
   t_min: 0.05                 # floor on T to prevent spread collapse near expiry
 
   # Sizing
-  default_size_contracts: 1
-  max_position_contracts: 50
+  default_size_contracts: 1   # demo: 1 contract per quote; live: 3-5
+  max_position_contracts: 20  # demo: tighter limit (demo balance is small)
   inventory_skew_factor: 0.15
 
   # Timing
@@ -104,8 +143,8 @@ market_making:
   position_sync_interval_seconds: 30
 
   # Order manager tuning (configurable, defaults used if omitted)
-  price_move_threshold_cents: 3   # minimum price change before replacing an order
-  quote_cooldown_seconds: 10      # minimum seconds between re-quotes per market
+  price_move_threshold_cents: 2   # demo: replace on 2¢ move (live books rarely move 2¢)
+  quote_cooldown_seconds: 5       # demo: 5s cooldown so we see more activity
 
   # Pin-risk extra spread near 0 or 100 cents.
   # Adds k_pin / sqrt(min(p, 1-p)) half-cents of extra spread.
