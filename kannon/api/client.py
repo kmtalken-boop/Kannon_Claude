@@ -165,6 +165,7 @@ class KalshiClient:
             "count": f"{count:.2f}",
             "price": f"{yes_price / 100:.4f}",
             "time_in_force": "good_till_canceled",
+            "self_trade_prevention_type": "cancel_resting",
         }
         data = await self._request("POST", "/portfolio/events/orders", json=payload)
         # V2 returns a flat object (no "order" wrapper); Order model handles sparse fields
