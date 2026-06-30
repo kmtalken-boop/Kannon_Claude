@@ -91,12 +91,15 @@ class KalshiClient:
         limit: int = 200,
         cursor: Optional[str] = None,
         min_close_ts: Optional[int] = None,
+        max_close_ts: Optional[int] = None,
     ) -> tuple[list[Market], Optional[str]]:
         params: dict[str, Any] = {"limit": limit, "status": status}
         if cursor:
             params["cursor"] = cursor
         if min_close_ts is not None:
             params["min_close_ts"] = min_close_ts
+        if max_close_ts is not None:
+            params["max_close_ts"] = max_close_ts
         data = await self._request("GET", "/markets", params=params)
         markets = []
         for m in data.get("markets", []):
@@ -106,21 +109,31 @@ class KalshiClient:
                 logger.debug(f"Skipping market {m.get('ticker', '?')}: {exc}")
         return markets, data.get("cursor")
 
-    async def get_all_open_markets(self, max_pages: int = 20) -> list[Market]:
-        """Fetch open markets up to max_pages × 200 = 4,000 candidates.
+    async def get_all_open_markets(
+        self,
+        max_pages: int = 60,
+        excluded_prefixes: tuple[str, ...] = (),
+        max_close_ts: Optional[int] = None,
+    ) -> list[Market]:
+        """Fetch open markets, paginating until the cursor is exhausted or
+        max_pages × 200 candidates have been scanned.
 
-        The demo API has 77K+ markets. 20 pages at 2 rps = ~10 seconds on
-        startup, which is acceptable. Raising from 8 to 20 pages to catch
-        weather, commodity, and macro markets that appear deeper in the list.
+        max_close_ts (if given) is sent server-side so far-future markets never
+        count against the page budget. excluded_prefixes are dropped from each
+        page as it's fetched — some series (e.g. multi-game extended sports
+        props) can have thousands of entries and would otherwise crowd out
+        every real market within the page budget.
         """
         markets: list[Market] = []
         cursor: Optional[str] = None
         for _ in range(max_pages):
-            batch, cursor = await self.get_markets(cursor=cursor)
-            markets.extend(batch)
+            batch, cursor = await self.get_markets(cursor=cursor, max_close_ts=max_close_ts)
+            for m in batch:
+                if not any(m.ticker.startswith(p) for p in excluded_prefixes):
+                    markets.append(m)
             if not cursor:
                 break
-        logger.info(f"Fetched {len(markets)} open markets")
+        logger.info(f"Fetched {len(markets)} open markets (after prefix exclusion)")
         return markets
 
     async def get_market(self, ticker: str) -> Market:

@@ -5,7 +5,7 @@ import logging
 import os
 import signal
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import yaml
@@ -259,7 +259,11 @@ class KalshiBot:
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     async def _refresh_markets(self):
-        all_markets = await self._client.get_all_open_markets()
+        max_close = datetime.now(timezone.utc) + timedelta(days=self._screener.max_days_to_expiry)
+        all_markets = await self._client.get_all_open_markets(
+            excluded_prefixes=tuple(self._screener.excluded_prefixes),
+            max_close_ts=int(max_close.timestamp()),
+        )
         selected = self._screener.select(all_markets)
         new_tickers = [m.ticker for m in selected]
 
@@ -288,13 +292,9 @@ class KalshiBot:
             )
         self._print_market_table(selected)
 
-        # Cross-market arb scan — apply the same ticker exclusions as the screener
-        # (e.g. in-play sports props) so excluded markets never surface as arb opportunities.
-        arb_candidates = [
-            m for m in all_markets
-            if not any(m.ticker.startswith(p) for p in self._screener.excluded_prefixes)
-        ]
-        arb_opps = self._arb_scanner.scan(arb_candidates)
+        # Cross-market arb scan. all_markets is already prefix-excluded by
+        # get_all_open_markets, so excluded markets never surface here either.
+        arb_opps = self._arb_scanner.scan(all_markets)
         if arb_opps:
             console.print(f"[bold yellow]ARB opportunities: {len(arb_opps)}[/bold yellow]")
             for opp in arb_opps:
