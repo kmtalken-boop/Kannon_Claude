@@ -201,5 +201,8 @@ class OrderManager:
         except KalshiAPIError as exc:
             if exc.status_code == 404:   # already filled or cancelled — order is gone
                 return True
+            if exc.status_code == 409 and "market_closed" in str(exc):
+                logger.debug(f"Market closed, order {order_id} is gone")
+                return True
             logger.warning(f"Cancel failed {order_id}: {exc}")
             return False

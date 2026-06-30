@@ -177,15 +177,15 @@ class Order(BaseModel):
         # initial_count_fp / count string → count int
         # v2 create response may omit count; fall back to remaining_count for display only.
         cnt = data.get("count")
-        if not cnt:
+        if cnt is None:
             raw = data.get("initial_count_fp")
-            if raw:
+            if raw is not None:
                 data["count"] = int(float(raw))
         elif isinstance(cnt, str):
             data["count"] = int(float(cnt))
         # remaining_count_fp / remaining_count string → remaining_count int
         rc = data.get("remaining_count")
-        if not rc:
+        if rc is None:
             raw = data.get("remaining_count_fp")
             if raw is not None:
                 data["remaining_count"] = int(float(raw))
