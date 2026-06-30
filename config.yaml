@@ -82,6 +82,9 @@ screening:
     - "KXNCAAF"    # College football
     # Opaque cross-category markets — cryptic tickers, unclear resolution criteria
     - "KXMVECROSS"
+    # Multi-game extended markets — these only have ask=100¢ (already settled) and
+    # reject orders with HTTP 410 deprecated_v1_order_endpoint. Always exclude.
+    - "KXMVESPORTS"
 
 # ── Fair Value Model ──────────────────────────────────────────────────────────
 fair_value:

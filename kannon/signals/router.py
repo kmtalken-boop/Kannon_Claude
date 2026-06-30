@@ -185,23 +185,33 @@ class ExternalSignalRouter:
 
     # ── Binance WebSocket ─────────────────────────────────────────────────────
 
-    _BINANCE_WS = (
+    # Primary stream: global (blocked in some regions, e.g. US → HTTP 451)
+    _BINANCE_WS_GLOBAL = (
         "wss://stream.binance.com:9443/stream"
+        "?streams=btcusdt@miniTicker/ethusdt@miniTicker"
+    )
+    # Fallback: Binance US (same API, available in the US)
+    _BINANCE_WS_US = (
+        "wss://stream.binance.us:9443/stream"
         "?streams=btcusdt@miniTicker/ethusdt@miniTicker"
     )
     _BINANCE_ASSET = {"BTCUSDT": "BTC", "ETHUSDT": "ETH"}
 
     async def _binance_loop(self):
+        # Try global first, fall back to US endpoint on geo-block (HTTP 451)
+        urls = [self._BINANCE_WS_GLOBAL, self._BINANCE_WS_US]
+        url_idx = 0
         backoff = 2.0
         while self._running:
+            ws_url = urls[url_idx % len(urls)]
             try:
                 async with websockets.connect(
-                    self._BINANCE_WS,
+                    ws_url,
                     ping_interval=20,
                     ping_timeout=10,
                 ) as ws:
                     backoff = 2.0
-                    logger.info("Binance WebSocket connected — receiving BTC/ETH prices")
+                    logger.info(f"Binance WebSocket connected ({ws_url.split('/')[2]}) — receiving BTC/ETH prices")
                     async for raw in ws:
                         if not self._running:
                             return
@@ -228,9 +238,21 @@ class ExternalSignalRouter:
             except Exception as exc:
                 if not self._running:
                     return
-                logger.warning(f"Binance WS error: {exc}, reconnect in {backoff:.0f}s")
-                await asyncio.sleep(backoff)
-                backoff = min(60.0, backoff * 2)
+                exc_str = str(exc)
+                if "451" in exc_str:
+                    # Geo-block — switch to the other endpoint
+                    url_idx += 1
+                    next_url = urls[url_idx % len(urls)]
+                    logger.warning(
+                        f"Binance geo-blocked (HTTP 451) on {ws_url.split('/')[2]} "
+                        f"— switching to {next_url.split('/')[2]}"
+                    )
+                    await asyncio.sleep(2.0)
+                    backoff = 2.0
+                else:
+                    logger.warning(f"Binance WS error: {exc}, reconnect in {backoff:.0f}s")
+                    await asyncio.sleep(backoff)
+                    backoff = min(60.0, backoff * 2)
 
     # ── CME FedWatch ──────────────────────────────────────────────────────────
 

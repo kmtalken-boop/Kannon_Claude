@@ -30,6 +30,12 @@ class MarketScreener:
             if m.ticker.startswith(prefix):
                 return False, f"excluded prefix ({prefix})"
         has_quotes = m.yes_bid is not None and m.yes_ask is not None
+        # Reject one-sided book at extremes: ask=100¢ with no bid means the market
+        # is effectively settled YES — no legitimate trading opportunity.
+        if m.yes_bid is None and m.yes_ask is not None and m.yes_ask >= 99:
+            return False, "ask-only at 100¢ (settled)"
+        if m.yes_ask is None and m.yes_bid is not None and m.yes_bid <= 1:
+            return False, "bid-only at 0¢ (settled)"
         if not has_quotes:
             if not self.allow_unquoted:
                 return False, "no quotes"

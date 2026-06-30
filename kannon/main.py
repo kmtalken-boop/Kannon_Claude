@@ -426,6 +426,9 @@ class KalshiBot:
                 if self._orders:
                     console.print("[yellow]Cancelling all resting orders...[/yellow]")
                     await self._orders.cancel_all()
+                # Close tracker last — after all loops have stopped writing to it
+                if self._fill_tracker:
+                    self._fill_tracker.close()
                 console.print("[green]Shutdown complete.[/green]")
 
     async def shutdown(self):
@@ -440,8 +443,6 @@ class KalshiBot:
                 await self._gather_task
             except asyncio.CancelledError:
                 pass
-        if self._fill_tracker:
-            self._fill_tracker.close()
 
 
 def main():
