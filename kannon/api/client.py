@@ -151,21 +151,27 @@ class KalshiClient:
         yes_price: int,
         client_order_id: Optional[str] = None,
     ) -> Order:
+        # V2 single-book YES-perspective: bid=buy YES, ask=sell YES.
+        # NO side flips: buy NO = sell YES = ask; sell NO = buy YES = bid.
+        if action == OrderAction.BUY:
+            book_side = "bid" if side == Side.YES else "ask"
+        else:
+            book_side = "ask" if side == Side.YES else "bid"
+
         payload: dict[str, Any] = {
             "ticker": ticker,
-            "action": action.value,
-            "side": side.value,
-            "type": order_type.value,
-            "count": count,
-            "yes_price": yes_price,
             "client_order_id": client_order_id or str(uuid.uuid4()),
+            "side": book_side,
+            "count": f"{count:.2f}",
+            "price": f"{yes_price / 100:.4f}",
+            "time_in_force": "good_till_canceled",
         }
-        data = await self._request("POST", "/portfolio/orders", json=payload)
-        return Order(**data["order"])
+        data = await self._request("POST", "/portfolio/events/orders", json=payload)
+        # V2 returns a flat object (no "order" wrapper); Order model handles sparse fields
+        return Order(**data)
 
-    async def cancel_order(self, order_id: str) -> Order:
-        data = await self._request("DELETE", f"/portfolio/orders/{order_id}")
-        return Order(**data["order"])
+    async def cancel_order(self, order_id: str) -> None:
+        await self._request("DELETE", f"/portfolio/events/orders/{order_id}")
 
     async def get_orders(
         self,

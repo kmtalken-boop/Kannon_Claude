@@ -168,23 +168,29 @@ class Order(BaseModel):
     def _remap_fp_fields(cls, data: dict) -> dict:
         if not isinstance(data, dict):
             return data
-        # yes_price_dollars: "0.3700" (probability string) → yes_price: 37 (cents)
+        # yes_price / yes_price_dollars → yes_price int cents
+        # v1 GETs: yes_price_dollars "0.3700"; v2 create body: price "0.3700"
         if data.get("yes_price") is None:
-            raw = data.get("yes_price_dollars")
+            raw = data.get("yes_price_dollars") or data.get("price")
             if raw is not None:
                 data["yes_price"] = int(round(float(raw) * 100))
-        # initial_count_fp: "1.00" → count (original order quantity)
-        # Only fall back to initial_count_fp, not remaining_count — partially filled orders
-        # have remaining_count < count, using it would corrupt the original order size.
-        if not data.get("count"):
+        # initial_count_fp / count string → count int
+        # v2 create response may omit count; fall back to remaining_count for display only.
+        cnt = data.get("count")
+        if not cnt:
             raw = data.get("initial_count_fp")
             if raw:
                 data["count"] = int(float(raw))
-        # remaining_count_fp: "1.00" → remaining_count
-        if not data.get("remaining_count"):
+        elif isinstance(cnt, str):
+            data["count"] = int(float(cnt))
+        # remaining_count_fp / remaining_count string → remaining_count int
+        rc = data.get("remaining_count")
+        if not rc:
             raw = data.get("remaining_count_fp")
             if raw is not None:
                 data["remaining_count"] = int(float(raw))
+        elif isinstance(rc, str):
+            data["remaining_count"] = int(float(rc))
         # Coerce unknown status values to a safe fallback
         if data.get("status") and data["status"] not in {s.value for s in OrderStatus}:
             data["status"] = "resting"
