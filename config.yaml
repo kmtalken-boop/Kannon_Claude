@@ -46,8 +46,9 @@ fees:
 #   min_open_interest: 50+
 #
 screening:
-  min_volume_24h: 50          # live: only quote markets with real trading activity
+  min_volume_24h: 25          # live: only quote markets with real trading activity
   min_open_interest: 25
+  min_time_to_expiry_hours: 48  # skip same-day/next-day game props that flood early API pages
   max_time_to_expiry_days: 30
   min_spread_cents: 3         # live: avoid sub-3¢ noise
   max_spread_cents: 20        # live: skip wide/illiquid markets

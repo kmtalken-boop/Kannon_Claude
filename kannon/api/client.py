@@ -111,8 +111,9 @@ class KalshiClient:
 
     async def get_all_open_markets(
         self,
-        max_pages: int = 60,
+        max_pages: int = 120,
         excluded_prefixes: tuple[str, ...] = (),
+        min_close_ts: Optional[int] = None,
         max_close_ts: Optional[int] = None,
         page_limit: int = 1000,
     ) -> list[Market]:
@@ -123,6 +124,8 @@ class KalshiClient:
         because some series (e.g. multi-game extended sports props) can have
         thousands of entries ahead of real markets in result order; a small
         page size burns the entire page budget on junk before reaching them.
+        min_close_ts skips same-day/next-day game props that dominate early
+        pages when results are sorted by close_time ascending.
         max_close_ts (if given) is sent server-side so far-future markets never
         count against the page budget. excluded_prefixes are dropped from each
         page as it's fetched.
@@ -133,7 +136,10 @@ class KalshiClient:
         exhausted = False
         for _ in range(max_pages):
             batch, cursor = await self.get_markets(
-                cursor=cursor, max_close_ts=max_close_ts, limit=page_limit
+                cursor=cursor,
+                min_close_ts=min_close_ts,
+                max_close_ts=max_close_ts,
+                limit=page_limit,
             )
             scanned += len(batch)
             for m in batch:

@@ -12,6 +12,7 @@ class MarketScreener:
     def __init__(self, cfg: dict):
         self.min_volume_24h: int = cfg.get("min_volume_24h", 100)
         self.min_open_interest: int = cfg.get("min_open_interest", 50)
+        self.min_expiry_hours: float = cfg.get("min_time_to_expiry_hours", 48)
         self.max_days_to_expiry: float = cfg.get("max_time_to_expiry_days", 30)
         self.min_spread_cents: int = cfg.get("min_spread_cents", 2)
         self.max_spread_cents: int = cfg.get("max_spread_cents", 20)

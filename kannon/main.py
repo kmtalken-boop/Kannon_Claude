@@ -262,9 +262,12 @@ class KalshiBot:
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     async def _refresh_markets(self):
-        max_close = datetime.now(timezone.utc) + timedelta(days=self._screener.max_days_to_expiry)
+        now = datetime.now(timezone.utc)
+        min_close = now + timedelta(hours=self._screener.min_expiry_hours)
+        max_close = now + timedelta(days=self._screener.max_days_to_expiry)
         all_markets = await self._client.get_all_open_markets(
             excluded_prefixes=tuple(self._screener.excluded_prefixes),
+            min_close_ts=int(min_close.timestamp()),
             max_close_ts=int(max_close.timestamp()),
         )
         selected = self._screener.select(all_markets)
