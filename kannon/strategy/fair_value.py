@@ -19,7 +19,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ..api.models import Orderbook
+from ..api.models import Orderbook, OrderbookLevel
 
 
 @dataclass
@@ -54,6 +54,8 @@ class FairValueModel:
         ofi_adjustment_cents: float = 0.0,
         external_anchor: Optional[float] = None,
         external_weight: float = 0.6,
+        own_bid: Optional[tuple[float, float]] = None,
+        own_ask: Optional[tuple[float, float]] = None,
     ) -> Optional[FVResult]:
         """
         Compute fair value from the live orderbook.
@@ -64,10 +66,17 @@ class FairValueModel:
             external_anchor: Optional external model price (cents). When provided,
                              it is blended with the microstructure estimate.
             external_weight: Weight on external anchor (0 = ignore, 1 = use only anchor).
+            own_bid: (price_cents, size_contracts) of our own resting bid, if any.
+            own_ask: (price_cents, size_contracts) of our own resting ask, if any.
+                     Both are subtracted from the book before computing FV — in a
+                     thin market our own resting order can BE the best bid/ask, and
+                     without this the model would price off its own prior quote
+                     (a self-referential feedback loop) instead of real signal.
 
         Returns:
             FVResult or None if the book is empty.
         """
+        ob = self._strip_own_orders(ob, own_bid, own_ask)
         bid = ob.best_yes_bid_cents
         ask = ob.best_yes_ask_cents
 
@@ -153,6 +162,43 @@ class FairValueModel:
         self._last_fv.pop(ticker, None)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _strip_own_orders(
+        ob: Orderbook,
+        own_bid: Optional[tuple[float, float]],
+        own_ask: Optional[tuple[float, float]],
+    ) -> Orderbook:
+        """Remove our own resting bid/ask from the book before pricing off it.
+
+        A resting SELL YES (ask) order is represented in this single-book model
+        as a NO bid at (100 - price), matching how get_orderbook/the WS feed
+        derive best_yes_ask_cents — see api/models.py and api/feed.py.
+        """
+        if own_bid is None and own_ask is None:
+            return ob
+
+        def _subtract(levels: list[OrderbookLevel], price_cents: float, dollar_amt: float) -> list[OrderbookLevel]:
+            out = []
+            for lv in levels:
+                if abs(lv.price_cents - price_cents) < 0.5:
+                    remaining = lv.quantity - dollar_amt
+                    if remaining > 1e-9:
+                        out.append(OrderbookLevel(price_cents=lv.price_cents, quantity=remaining))
+                else:
+                    out.append(lv)
+            return out
+
+        yes_bids = list(ob.yes_bids)
+        no_bids = list(ob.no_bids)
+        if own_bid is not None:
+            price, size = own_bid
+            yes_bids = _subtract(yes_bids, price, size * (price / 100.0))
+        if own_ask is not None:
+            price, size = own_ask
+            no_price = 100.0 - price
+            no_bids = _subtract(no_bids, no_price, size * (no_price / 100.0))
+        return Orderbook(ticker=ob.ticker, yes_bids=yes_bids, no_bids=no_bids)
 
     def _empty_book(self, fv: float, ticker: str) -> FVResult:
         """Zero-information FV when orderbook is empty; confidence=0 → target spread."""

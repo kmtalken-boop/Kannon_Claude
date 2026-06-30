@@ -137,11 +137,14 @@ class KalshiBot:
             if anchor_result:
                 external_anchor, external_weight = anchor_result
 
+        own_bid, own_ask = self._orders.get_resting(ticker)
         fv_result = self._fv_model.compute(
             ob,
             ofi_adjustment_cents=ofi_adj,
             external_anchor=external_anchor,
             external_weight=external_weight,
+            own_bid=own_bid,
+            own_ask=own_ask,
         )
         if fv_result is None:
             return

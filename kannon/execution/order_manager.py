@@ -75,6 +75,19 @@ class OrderManager:
             await self._update_side(mq, quote, is_bid=True)
             await self._update_side(mq, quote, is_bid=False)
 
+    def get_resting(
+        self, ticker: str
+    ) -> tuple[Optional[tuple[int, int]], Optional[tuple[int, int]]]:
+        """Return ((bid_price, bid_size), (ask_price, ask_size)) for this
+        ticker's own resting orders — None for a side with nothing resting.
+        Used to strip our own quote out of fair-value computation."""
+        mq = self._quotes.get(ticker)
+        if mq is None:
+            return None, None
+        bid = (mq.bid.price, mq.bid.size) if mq.bid else None
+        ask = (mq.ask.price, mq.ask.size) if mq.ask else None
+        return bid, ask
+
     async def cancel_ticker(self, ticker: str):
         async with self._quotes_lock:
             mq = self._quotes.pop(ticker, None)
