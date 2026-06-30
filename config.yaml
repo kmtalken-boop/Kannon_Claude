@@ -133,21 +133,23 @@ market_making:
   # Avellaneda-Stoikov parameters
   # Calibrated for binary contracts in [0,1] probability space.
   risk_aversion: 0.05         # γ: higher = wider spreads / stronger inventory skew
-  order_depth_k: 10.0         # κ: order arrival decay rate in [0,1] price space
+  order_depth_k: 5.0          # κ: order arrival decay rate in [0,1] price space (live: 5.0 per tuning guide)
   t_min: 0.05                 # floor on T to prevent spread collapse near expiry
 
   # Sizing
   default_size_contracts: 1
-  max_position_contracts: 5
+  max_position_contracts: 3   # live: sized for $10 balance (~$0.30-3 exposure/market at this cap)
   inventory_skew_factor: 0.15
 
   # Timing
   stale_quote_ttl_seconds: 3600  # 1 hour — prediction market orders should rest for hours
-  position_sync_interval_seconds: 30
+  # Live: tightened from 30s — shortens the window where the bot's own unfilled
+  # position/risk state can drift stale relative to real fills on the exchange.
+  position_sync_interval_seconds: 10
 
   # Order manager tuning (configurable, defaults used if omitted)
-  price_move_threshold_cents: 2   # demo: replace on 2¢ move (live books rarely move 2¢)
-  quote_cooldown_seconds: 5       # demo: 5s cooldown so we see more activity
+  price_move_threshold_cents: 3   # live books move more than demo; avoid excessive cancel/replace churn
+  quote_cooldown_seconds: 3       # live: requote a bit faster to stay competitive
 
   # Pin-risk extra spread near 0 or 100 cents.
   # Adds k_pin / sqrt(min(p, 1-p)) half-cents of extra spread.
@@ -157,11 +159,11 @@ market_making:
 # ── Risk Management ───────────────────────────────────────────────────────────
 # max_daily_loss_dollars: halt if mark-to-market equity drops more than this
 # from session start. Set to ~10-15% of account balance.
-# With $50 live balance → $5 limit = 10% drawdown before halt.
+# With $10 live balance → $1 limit = 10% drawdown before halt.
 risk:
-  max_daily_loss_dollars: 5.0
-  max_single_market_contracts: 5
-  max_total_delta_contracts: 20
+  max_daily_loss_dollars: 1.0
+  max_single_market_contracts: 3
+  max_total_delta_contracts: 8    # live: sized so worst-case exposure (~8 contracts × ~$1) fits $10 balance
   halt_on_daily_loss: true
 
 # ── Arb Scanner ───────────────────────────────────────────────────────────────

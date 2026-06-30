@@ -288,8 +288,13 @@ class KalshiBot:
             )
         self._print_market_table(selected)
 
-        # Cross-market arb scan
-        arb_opps = self._arb_scanner.scan(all_markets)
+        # Cross-market arb scan — apply the same ticker exclusions as the screener
+        # (e.g. in-play sports props) so excluded markets never surface as arb opportunities.
+        arb_candidates = [
+            m for m in all_markets
+            if not any(m.ticker.startswith(p) for p in self._screener.excluded_prefixes)
+        ]
+        arb_opps = self._arb_scanner.scan(arb_candidates)
         if arb_opps:
             console.print(f"[bold yellow]ARB opportunities: {len(arb_opps)}[/bold yellow]")
             for opp in arb_opps:
