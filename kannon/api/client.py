@@ -114,26 +114,41 @@ class KalshiClient:
         max_pages: int = 60,
         excluded_prefixes: tuple[str, ...] = (),
         max_close_ts: Optional[int] = None,
+        page_limit: int = 1000,
     ) -> list[Market]:
         """Fetch open markets, paginating until the cursor is exhausted or
-        max_pages × 200 candidates have been scanned.
+        max_pages × page_limit candidates have been scanned.
 
+        page_limit defaults to 1000, the API's documented max — this matters
+        because some series (e.g. multi-game extended sports props) can have
+        thousands of entries ahead of real markets in result order; a small
+        page size burns the entire page budget on junk before reaching them.
         max_close_ts (if given) is sent server-side so far-future markets never
         count against the page budget. excluded_prefixes are dropped from each
-        page as it's fetched — some series (e.g. multi-game extended sports
-        props) can have thousands of entries and would otherwise crowd out
-        every real market within the page budget.
+        page as it's fetched.
         """
         markets: list[Market] = []
+        scanned = 0
         cursor: Optional[str] = None
+        exhausted = False
         for _ in range(max_pages):
-            batch, cursor = await self.get_markets(cursor=cursor, max_close_ts=max_close_ts)
+            batch, cursor = await self.get_markets(
+                cursor=cursor, max_close_ts=max_close_ts, limit=page_limit
+            )
+            scanned += len(batch)
             for m in batch:
                 if not any(m.ticker.startswith(p) for p in excluded_prefixes):
                     markets.append(m)
             if not cursor:
+                exhausted = True
                 break
-        logger.info(f"Fetched {len(markets)} open markets (after prefix exclusion)")
+        if not exhausted:
+            logger.warning(
+                f"get_all_open_markets hit max_pages={max_pages} cap "
+                f"({scanned} scanned, {len(markets)} kept) without exhausting "
+                f"the cursor — real markets may exist beyond this page budget"
+            )
+        logger.info(f"Fetched {len(markets)} open markets (after prefix exclusion, {scanned} scanned)")
         return markets
 
     async def get_market(self, ticker: str) -> Market:
