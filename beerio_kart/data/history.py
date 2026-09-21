@@ -94,6 +94,22 @@ ALL_RANKING_EVENTS: list[list[str]] = (
     SEASON_1_WEEKLY_RESULTS + SEASON_1_PLAYOFF_RESULTS + SEASON_2_WEEK_1_RESULTS
 )
 
+# Recency weight per event above (same order, same length) -- how much
+# each ranking counts in the Plackett-Luce fit. Season 1 results get the
+# baseline weight; season 2 results count 3x as much, so a driver who's
+# recently improved (the league's read: Sam and Max) shows it in their
+# fitted skill instead of that recent form being diluted evenly across
+# their whole history. Tune SEASON_2_RECENCY_WEIGHT down over the course
+# of the season as season 2 stops being "recent" and becomes most of the
+# sample on its own.
+SEASON_1_RECENCY_WEIGHT = 1.0
+SEASON_2_RECENCY_WEIGHT = 3.0
+ALL_RANKING_WEIGHTS: list[float] = (
+    [SEASON_1_RECENCY_WEIGHT] * len(SEASON_1_WEEKLY_RESULTS)
+    + [SEASON_1_RECENCY_WEIGHT] * len(SEASON_1_PLAYOFF_RESULTS)
+    + [SEASON_2_RECENCY_WEIGHT] * len(SEASON_2_WEEK_1_RESULTS)
+)
+
 # Ids that showed up in the results above but aren't recurring league
 # members (one-off substitutes) -- excluded from the calibrated roster
 # even though their ranking events are kept for the fit.
@@ -130,4 +146,21 @@ SEASON_2_GROUPS: dict[str, list[str]] = {
 MANUAL_SKILL_ESTIMATES: dict[str, float] = {
     "Maclane": 826.0,  # midpoint of fitted Ivan/Cailin skill
     "Luke": 826.0,  # midpoint of fitted Ivan/Cailin skill
+}
+
+# Multiplicative "current form" adjustments for drivers *with* history
+# whose real skill has moved beyond what the fit alone captures.
+#
+# Sam's one season-2 result was an outright win, and SEASON_2_RECENCY_WEIGHT
+# already pulls his fitted skill up a lot on its own (~816 -> ~1019) --
+# no override needed. Max's one season-2 result was a modest 3rd of 4, not
+# a win, so recency weighting barely moves him (~407 -> ~375) even though
+# the league's read is that he's "improved drastically." That gap between
+# "what 1 modest result implies" and "what the league actually believes"
+# is exactly what this override is for -- it's a judgment call, not a fit
+# from data, so tune the multiplier directly (or add more of his season-2
+# results to SEASON_2_WEEK_1_RESULTS/a new week block so the fit can pick
+# it up on its own) as better evidence shows up.
+FORM_ADJUSTMENTS: dict[str, float] = {
+    "Max": 2.2,  # ~375 -> ~825: roughly Ivan/Cailin territory, no longer last
 }

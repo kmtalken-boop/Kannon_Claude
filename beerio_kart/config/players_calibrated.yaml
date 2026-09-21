@@ -1,42 +1,44 @@
-# Skill ratings fit from real historical results via a Plackett-Luce
-# MLE (see calibrate.py + build_roster_from_history.py), placed into
-# this season's real groups (data/history.py: SEASON_2_GROUPS). Maclane
-# and Luke have no race history yet, so their skill is a manual estimate
-# (data/history.py: MANUAL_SKILL_ESTIMATES) -- replace it once they've
-# actually raced.
+# Skill ratings fit from real historical results via a recency-weighted
+# Plackett-Luce MLE (see calibrate.py + build_roster_from_history.py),
+# placed into this season's real groups (data/history.py: SEASON_2_GROUPS).
+# Maclane and Luke have no race history yet, so their skill is a manual
+# estimate (MANUAL_SKILL_ESTIMATES) -- replace it once they've actually
+# raced. Max's fitted skill is multiplied by a manual form adjustment
+# (FORM_ADJUSTMENTS) reflecting the league's read that he's improved
+# beyond what his single season-2 result shows.
 groups:
   A:
   - name: Kannon
-    skill: 2175.3
+    skill: 2463.9
   - name: Jack
-    skill: 1607.1
+    skill: 1668.6
   - name: Christian
-    skill: 936.2
+    skill: 814.0
   - name: Peter
-    skill: 415.3
+    skill: 290.5
   B:
   - name: Sam
-    skill: 816.5
+    skill: 1019.2
   - name: Jackson
-    skill: 826.5
+    skill: 840.5
   - name: Max
-    skill: 407.1
+    skill: 825.4
   - name: Jorgen
-    skill: 470.0
+    skill: 262.8
   C:
   - name: Isaiah
-    skill: 961.2
+    skill: 1204.0
   - name: Harrison
-    skill: 1101.2
+    skill: 1169.9
   - name: Cailin
-    skill: 943.9
+    skill: 779.9
   - name: Ivan
-    skill: 707.9
+    skill: 390.0
   D:
   - name: Will
-    skill: 1124.1
+    skill: 1126.2
   - name: Stu
-    skill: 1166.3
+    skill: 1199.0
   - name: Maclane
     skill: 826.0
   - name: Luke

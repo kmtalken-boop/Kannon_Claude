@@ -12,7 +12,10 @@ from __future__ import annotations
 
 
 def fit_plackett_luce(
-    rankings: list[list[str]], iterations: int = 300, ridge: float = 3.0
+    rankings: list[list[str]],
+    weights: list[float] | None = None,
+    iterations: int = 300,
+    ridge: float = 3.0,
 ) -> dict[str, float]:
     """Fit multiplicative Plackett-Luce strengths from historical rankings.
 
@@ -20,6 +23,13 @@ def fit_plackett_luce(
     ordered best to worst. Rankings don't need to cover the same players
     or the same number of players -- partial participation (someone
     sitting a week out, a group of 3 instead of 4) is handled natively.
+
+    ``weights``: an optional per-ranking multiplier, same length as
+    ``rankings`` (default: 1.0 for all). Use this to weight recent form
+    more heavily than old results -- a ranking with weight 3.0 counts as
+    strongly as observing it 3 times. This is what lets a player who's
+    "drastically improved" recently pull their fitted skill up faster
+    than diluting new results evenly across their whole history would.
 
     Returns a strength > 0 per player that appeared at least once,
     normalized so the mean strength across all players is 1.0. A strength
@@ -41,25 +51,32 @@ def fit_plackett_luce(
     if not players:
         return {}
 
+    if weights is None:
+        weights = [1.0] * len(rankings)
+    elif len(weights) != len(rankings):
+        raise ValueError("weights must be the same length as rankings")
+
     w = {p: 1.0 for p in players}
 
     for _ in range(iterations):
         wins = {p: ridge for p in players}
         denom = {p: ridge for p in players}
 
-        for ranking in rankings:
+        for ranking, weight in zip(rankings, weights):
             remaining = list(ranking)
             # Plackett-Luce factors a full ranking into a sequence of
             # "who's best among those still remaining" contests: 1st
             # place wins against the whole field, 2nd wins against
             # everyone but 1st, and so on. The last-place finisher never
             # wins a contest, so it contributes no win but still adds to
-            # the denominator of every contest it's present for.
+            # the denominator of every contest it's present for. A
+            # ranking's weight scales both sides of that contest equally,
+            # so it behaves like observing the same result `weight` times.
             while len(remaining) > 1:
                 total_strength = sum(w[p] for p in remaining)
-                wins[remaining[0]] += 1.0
+                wins[remaining[0]] += weight
                 for p in remaining:
-                    denom[p] += 1.0 / total_strength
+                    denom[p] += weight / total_strength
                 remaining = remaining[1:]
 
         w = {p: wins[p] / denom[p] for p in players}

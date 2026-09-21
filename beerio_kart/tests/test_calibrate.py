@@ -37,6 +37,19 @@ class TestFitPlackettLuce(unittest.TestCase):
         self.assertEqual(skill["a"], 2000.0)
         self.assertEqual(skill["b"], 500.0)
 
+    def test_wrong_length_weights_raises(self):
+        with self.assertRaises(ValueError):
+            fit_plackett_luce([["a", "b"]], weights=[1.0, 2.0])
+
+    def test_heavily_weighted_recent_result_dominates_fit(self):
+        # "b" loses every early (low-weight) game but wins a single,
+        # heavily-weighted recent one -- the recent result should be
+        # enough to pull "b" above "a" despite the losing record.
+        rankings = [["a", "b"], ["a", "b"], ["a", "b"], ["b", "a"]]
+        weights = [1.0, 1.0, 1.0, 20.0]
+        w = fit_plackett_luce(rankings, weights=weights)
+        self.assertGreater(w["b"], w["a"])
+
 
 if __name__ == "__main__":
     unittest.main()
