@@ -27,13 +27,28 @@ Both one-off substitute ids are kept in the ranking events (they still
 carry information about how the *other* three racers in their group did
 that day) but are excluded from the final calibrated roster -- see
 ``build_roster_from_history.py``.
+
+Two more batches were added after the initial transcription, both
+provided directly by the user rather than pulled from the sheet:
+
+- ``SEASON_1_PLAYOFF_RESULTS``: last season's playoffs. This is a strong
+  real-world confirmation of the bracket structure the simulator models
+  (``playoffs.py``): an 8-player field splits into two 4-player semis,
+  and the top 2 from *each* semi (not just the semis' outright winners)
+  advance to a single 4-player final. In the final, Will raced in Jake's
+  slot ("Will (subbing for Jake)") -- recorded under Will's own id since
+  it's genuinely his result, not Jake's.
+- ``SEASON_2_WEEK_1_RESULTS``: the first week of the new season, with 4
+  new drivers (Christian, Harrison, Cailin, Ivan) added to the returning
+  core. Only 12 drivers/3 groups have been provided so far for this
+  season, one group short of the 16-player/4-group target structure.
 """
 from __future__ import annotations
 
 # Each entry: one race group's results for one week, ordered best (most
 # points) to worst. This is exactly the "ranking" format
 # calibrate.fit_plackett_luce expects.
-WEEKLY_GROUP_RESULTS: list[list[str]] = [
+SEASON_1_WEEKLY_RESULTS: list[list[str]] = [
     # Week 1
     ["Kannon", "Jack", "Jake", "Sam"],
     ["Greg", "Isaiah", "Budzy", "Jorgen"],
@@ -48,13 +63,31 @@ WEEKLY_GROUP_RESULTS: list[list[str]] = [
     ["Jack (sub)", "Jake", "Sam", "Peter"],
 ]
 
-# Ids that showed up in the weekly groups above but aren't recurring
-# league members (one-off substitutes) -- excluded from the calibrated
-# roster even though their ranking events are kept for the fit.
+SEASON_1_PLAYOFF_RESULTS: list[list[str]] = [
+    ["Kannon", "Jack", "Isaiah", "Jackson"],  # semi 1 (seeds 1,2,7,8)
+    ["Jake", "Stu", "Will", "Sam"],  # semi 2 (seeds 3-6)
+    ["Kannon", "Jack", "Stu", "Will"],  # final -- Will subbed for Jake
+]
+
+SEASON_2_WEEK_1_RESULTS: list[list[str]] = [
+    ["Kannon", "Jack", "Christian", "Peter"],
+    ["Sam", "Jackson", "Max", "Jorgen"],
+    ["Isaiah", "Harrison", "Cailin", "Ivan"],
+]
+
+# Every ranking event available, in chronological order -- what
+# build_roster_from_history.py fits skills against by default.
+ALL_RANKING_EVENTS: list[list[str]] = (
+    SEASON_1_WEEKLY_RESULTS + SEASON_1_PLAYOFF_RESULTS + SEASON_2_WEEK_1_RESULTS
+)
+
+# Ids that showed up in the results above but aren't recurring league
+# members (one-off substitutes) -- excluded from the calibrated roster
+# even though their ranking events are kept for the fit.
 SUBSTITUTE_IDS = {"Zynny", "Jack (sub)"}
 
-# Season point totals through week 3, for cross-checking the calibration
-# against the sheet's own running standings.
+# Season point totals through week 3 of season 1, for cross-checking the
+# calibration against the sheet's own running standings.
 SEASON_TOTALS_THROUGH_WEEK_3: dict[str, int] = {
     "Kannon": 1284,
     "Jack": 1059,
@@ -68,4 +101,12 @@ SEASON_TOTALS_THROUGH_WEEK_3: dict[str, int] = {
     "Peter": 432,
     "Max": 315,
     "Jorgen": 299,
+}
+
+# This season's groups as given so far -- 3 of the 4 needed for a
+# 16-player/4-group season. Fill in group D once known.
+SEASON_2_GROUPS: dict[str, list[str]] = {
+    "A": ["Kannon", "Jack", "Christian", "Peter"],
+    "B": ["Sam", "Jackson", "Max", "Jorgen"],
+    "C": ["Isaiah", "Harrison", "Cailin", "Ivan"],
 }
