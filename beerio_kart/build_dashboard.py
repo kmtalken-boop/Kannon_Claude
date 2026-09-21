@@ -23,6 +23,7 @@ played, real average points, all of PlayerDetail's lookups) is one.
 from __future__ import annotations
 
 import datetime
+import itertools
 import random
 
 from openpyxl import Workbook
@@ -43,6 +44,7 @@ from .data.history_points import (
     SEASON_2_WEEK_1_POINTS,
 )
 from .match import MatchConfig
+from .matchup import estimate_matchup
 from .models import Player
 from .monte_carlo import run_monte_carlo
 from .season import run_season
@@ -51,6 +53,8 @@ FONT_NAME = "Arial"
 SIMS = 20000
 MC_SEED = 42
 SNAPSHOT_SEED = 7
+MATCHUP_TRIALS = 200
+MATCHUP_SEED = 99
 OUT_PATH = "beerio_kart/dashboard/Beerio_Kart_Dashboard.xlsx"
 ROSTER_YAML = "beerio_kart/config/players_calibrated.yaml"
 
@@ -223,7 +227,7 @@ def build_overview(wb, generated_at):
     cell(ws, r, 2, "Live Excel formula; recalculates automatically.", border=False)
 
 
-def build_roster_sheet(wb, breakdown, effective_by_id):
+def build_roster_sheet(wb, breakdown, effective_by_id, results_last_row):
     ws = wb.create_sheet("Roster")
     headers = [
         "Group", "Player", "Fitted Skill", "Adjustment Multiplier", "Manual Override",
@@ -243,8 +247,13 @@ def build_roster_sheet(wb, breakdown, effective_by_id):
         cell(ws, row, 4, b.multiplier, font=INPUT_FONT, fill=INPUT_FILL, fmt="0.00")
         cell(ws, row, 5, b.manual_override, font=INPUT_FONT, fill=INPUT_FILL, fmt="#,##0.0")
         cell(ws, row, 6, f"=IF(E{row}=\"\",C{row}*D{row},E{row})", fmt="#,##0.0")
-        cell(ws, row, 7, f'=COUNTIF(ResultsLog!$C$2:$C$61,B{row})')
-        cell(ws, row, 8, f'=IFERROR(AVERAGEIF(ResultsLog!$C$2:$C$61,B{row},ResultsLog!$E$2:$E$61),"n/a")', fmt="#,##0.0")
+        cell(ws, row, 7, f'=COUNTIF(ResultsLog!$C$2:$C${results_last_row},B{row})')
+        cell(
+            ws, row, 8,
+            f'=IFERROR(AVERAGEIF(ResultsLog!$C$2:$C${results_last_row},B{row},'
+            f'ResultsLog!$E$2:$E${results_last_row}),"n/a")',
+            fmt="#,##0.0",
+        )
         note = ""
         if b.manual_override is not None:
             note = "No race history yet -- manual estimate (see league read)."
@@ -411,7 +420,164 @@ def build_season_snapshot_sheet(wb, season_result):
     cell(ws, row, 2, playoffs.champion, font=champ_font, border=False)
 
 
-def build_player_detail_sheet(wb, player_ids, results_last_row, max_games):
+def build_matchup_data_sheet(wb, all_players, config):
+    """Precomputes estimate_matchup() for every possible 4-player lineup
+    (C(16,4) = 1,820 combinations) and writes it as a hidden lookup table,
+    keyed by the 4 names sorted alphabetically. MatchupPredictor looks a
+    combination up here instead of running the simulator live -- Excel
+    itself can't run simulate_match, but a full precomputed table lets any
+    of the 1,820 possible 4-player picks still resolve instantly and
+    accurately (it's a real Monte Carlo estimate, not an approximation).
+    """
+    ws = wb.create_sheet("MatchupData")
+    ws.sheet_state = "hidden"
+    header_row(
+        ws, 1,
+        ["Key", "Sorted1", "Sorted2", "Sorted3", "Sorted4",
+         "AvgPoints1", "AvgPoints2", "AvgPoints3", "AvgPoints4",
+         "WinPct1", "WinPct2", "WinPct3", "WinPct4"],
+    )
+
+    rng = random.Random(MATCHUP_SEED)
+    row = 2
+    for combo in itertools.combinations(sorted(all_players, key=lambda p: p.name), 4):
+        names = [p.name for p in combo]
+        estimate = estimate_matchup(list(combo), config, rng, trials=MATCHUP_TRIALS)
+        key = "|".join(names)
+        cell(ws, row, 1, key)
+        for i, p in enumerate(combo):
+            cell(ws, row, 2 + i, p.name)
+        for i, p in enumerate(combo):
+            cell(ws, row, 6 + i, estimate.avg_points[p.id], fmt="#,##0.0")
+        for i, p in enumerate(combo):
+            cell(ws, row, 10 + i, estimate.win_pct[p.id] / 100.0, fmt="0.0%")
+        row += 1
+
+    last_row = row - 1
+    return last_row
+
+
+def build_matchup_predictor_sheet(wb, player_ids, matchup_last_row):
+    ws = wb.create_sheet("MatchupPredictor")
+    autosize(ws, [16, 18, 8, 4, 16, 16])
+
+    cell(ws, 1, 1, "Matchup Predictor", font=TITLE_FONT, border=False)
+    cell(
+        ws, 2, 1,
+        f"Pick any 4 players -- estimated from {MATCHUP_TRIALS} simulated matches for that exact"
+        " lineup (precomputed for all 1,820 possible 4-player combinations).",
+        font=Font(name=FONT_NAME, italic=True, size=10), border=False,
+    )
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=6)
+    ws.cell(row=2, column=1).alignment = Alignment(wrap_text=True)
+
+    n_players = len(player_ids)
+    dv = DataValidation(type="list", formula1=f"=Lists!$A$1:$A${n_players}", allow_blank=False)
+    ws.add_data_validation(dv)
+
+    defaults = (sorted(player_ids) + [None] * 4)[:4]
+    header_row(ws, 4, ["Pick", "Player", "(rank)", "", "Sorted #", "(internal)"])
+    for i in range(4):
+        r = 5 + i
+        cell(ws, r, 1, f"Player {i + 1}", font=BOLD_BODY_FONT)
+        pick = cell(ws, r, 2, defaults[i], font=INPUT_FONT, fill=INPUT_FILL)
+        dv.add(pick)
+        cell(ws, r, 3, f"=SUMPRODUCT(--($B$5:$B$8<B{r}))+1", fill=COMPUTED_FILL, fmt="0")
+        cell(ws, r, 5, i + 1, fill=COMPUTED_FILL, fmt="0")
+        cell(ws, r, 6, f"=INDEX($B$5:$B$8,MATCH(E{r},$C$5:$C$8,0))", fill=COMPUTED_FILL)
+
+    cell(ws, 10, 1, "Status", font=BOLD_BODY_FONT, border=False)
+    cell(
+        ws, 10, 2,
+        '=IF(COUNTA($B$5:$B$8)=SUMPRODUCT(1/COUNTIF($B$5:$B$8,$B$5:$B$8)),'
+        '"OK - 4 distinct players","ERROR: pick 4 DIFFERENT players")',
+        border=False,
+    )
+    cell(ws, 11, 1, "Lookup key", font=BOLD_BODY_FONT, border=False)
+    cell(ws, 11, 2, "=F5&\"|\"&F6&\"|\"&F7&\"|\"&F8", fill=COMPUTED_FILL)
+
+    header_row(ws, 13, ["Player", "Avg Points (est.)", "Win %"])
+    for i in range(4):
+        r = 14 + i
+        src = 5 + i
+        cell(ws, r, 1, f"=B{src}")
+        avg_formula = (
+            f'=IF($B$10<>"OK - 4 distinct players","-",'
+            f'IFERROR(INDEX(CHOOSE($C{src},MatchupData!$F$2:$F${matchup_last_row},'
+            f"MatchupData!$G$2:$G${matchup_last_row},MatchupData!$H$2:$H${matchup_last_row},"
+            f"MatchupData!$I$2:$I${matchup_last_row}),"
+            f'MATCH($B$11,MatchupData!$A$2:$A${matchup_last_row},0)),"n/a"))'
+        )
+        win_formula = (
+            f'=IF($B$10<>"OK - 4 distinct players","-",'
+            f'IFERROR(INDEX(CHOOSE($C{src},MatchupData!$J$2:$J${matchup_last_row},'
+            f"MatchupData!$K$2:$K${matchup_last_row},MatchupData!$L$2:$L${matchup_last_row},"
+            f"MatchupData!$M$2:$M${matchup_last_row}),"
+            f'MATCH($B$11,MatchupData!$A$2:$A${matchup_last_row},0)),"n/a"))'
+        )
+        cell(ws, r, 2, avg_formula, fmt="#,##0.0")
+        cell(ws, r, 3, win_formula, fmt="0.0%")
+
+    chart = BarChart()
+    chart.title = "Estimated avg points, selected lineup"
+    chart.y_axis.title = "Avg Points"
+    chart.style = 10
+    data = Reference(ws, min_col=2, min_row=13, max_row=17)
+    cats = Reference(ws, min_col=1, min_row=14, max_row=17)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    chart.width = 16
+    chart.height = 9
+    ws.add_chart(chart, "E13")
+
+
+def build_player_history_wide_sheets(wb, results_rows, player_ids):
+    """A player's chronological result history, pivoted so each player is
+    one column -- ``PlayerDetail`` can then pull it with plain INDEX/MATCH
+    (row = appearance #, column = MATCH(selected player, header row)).
+    Computed here in Python rather than as a live "filter this player out
+    of ResultsLog" formula: with only 16 players/~60 rows the dynamic
+    version would be more "clever" for no real benefit, and it avoids
+    array-style formulas that are slower and less portable across Excel
+    and LibreOffice than plain INDEX/MATCH.
+    """
+    by_player: dict[str, list[tuple[str, int]]] = {pid: [] for pid in player_ids}
+    for label, _phase, pid, _placement, points in results_rows:
+        if pid in by_player:
+            by_player[pid].append((label, points))
+    max_games = max((len(v) for v in by_player.values()), default=0)
+
+    sorted_ids = sorted(player_ids)
+    labels_ws = wb.create_sheet("PlayerHistoryLabels")
+    points_ws = wb.create_sheet("PlayerHistoryPoints")
+    for ws in (labels_ws, points_ws):
+        ws.sheet_state = "hidden"
+        cell(ws, 1, 1, "#")
+        for i, pid in enumerate(sorted_ids, start=2):
+            cell(ws, 1, i, pid)
+
+    for k in range(1, max_games + 1):
+        row = k + 1
+        cell(labels_ws, row, 1, k, fmt="0")
+        cell(points_ws, row, 1, k, fmt="0")
+        for i, pid in enumerate(sorted_ids, start=2):
+            history = by_player[pid]
+            if k <= len(history):
+                label, points = history[k - 1]
+                cell(labels_ws, row, i, label)
+                cell(points_ws, row, i, points, fmt="#,##0")
+
+    last_col = 1 + len(sorted_ids)
+    last_row = 1 + max_games
+    return {
+        "labels_range": f"$B$2:${get_column_letter(last_col)}${last_row}",
+        "points_range": f"$B$2:${get_column_letter(last_col)}${last_row}",
+        "header_range": f"$B$1:${get_column_letter(last_col)}$1",
+        "max_games": max_games,
+    }
+
+
+def build_player_detail_sheet(wb, player_ids, history_wide):
     ws = wb.create_sheet("PlayerDetail")
     autosize(ws, [22, 26, 12])
 
@@ -452,14 +618,20 @@ def build_player_detail_sheet(wb, player_ids, results_last_row, max_games):
     header_row(ws, row, ["#", "Event", "Points"])
     row += 1
     first_data_row = row
-    for k in range(1, max_games + 1):
-        rel_row_expr = (
-            f"AGGREGATE(15,6,(ROW(ResultsLog!$C$2:$C${results_last_row})"
-            f"-ROW(ResultsLog!$C$2)+1)/(ResultsLog!$C$2:$C${results_last_row}=$A$2),{k})"
-        )
+    match_col = (
+        f'MATCH($A$2,PlayerHistoryLabels!{history_wide["header_range"]},0)'
+    )
+    for k in range(1, history_wide["max_games"] + 1):
         cell(ws, row, 1, k, fmt="0")
-        cell(ws, row, 2, f'=IFERROR(INDEX(ResultsLog!$A$2:$A${results_last_row},{rel_row_expr}),"")')
-        cell(ws, row, 3, f'=IFERROR(INDEX(ResultsLog!$E$2:$E${results_last_row},{rel_row_expr}),NA())', fmt="#,##0")
+        cell(
+            ws, row, 2,
+            f'=IFERROR(INDEX(PlayerHistoryLabels!{history_wide["labels_range"]},{k},{match_col}),"")',
+        )
+        cell(
+            ws, row, 3,
+            f'=IFERROR(INDEX(PlayerHistoryPoints!{history_wide["points_range"]},{k},{match_col}),NA())',
+            fmt="#,##0",
+        )
         row += 1
     last_data_row = row - 1
     make_table(ws, "PlayerDetailTable", f"A{table_start}:C{last_data_row}")
@@ -489,11 +661,18 @@ def main() -> None:
 
     groups = load_groups_plain_ids(ROSTER_YAML)
     config = MatchConfig()
+    all_players = [p for plist in groups.values() for p in plist]
+    # Scope dropdowns/lookups to the 16 rostered players only. breakdown
+    # also carries Jake/Greg (real history, but not on this season's
+    # roster) -- selectable there, they'd fail every Roster/MatchupData
+    # lookup below with a bare #N/A.
+    player_ids = {p.name for p in all_players}
 
     mc_rng = random.Random(MC_SEED)
     mc_stats = run_monte_carlo(groups, config, SIMS, mc_rng)
-    # monte_carlo keys by the roster's internal ids ("A_Kannon"); rekey by
-    # display name to match ResultsLog/Roster, which use plain names.
+    # monte_carlo keys by player id, which load_groups_plain_ids already
+    # set to the bare name, so this dict is already keyed the same way
+    # Roster/ResultsLog/PlayoffOdds are.
     mc_stats = {s.name: s for s in mc_stats.values()}
 
     snapshot_rng = random.Random(SNAPSHOT_SEED)
@@ -501,22 +680,24 @@ def main() -> None:
     season_result = run_season(snapshot_groups, config, snapshot_rng)
 
     results_rows = assemble_results_log()
-    from collections import Counter
-
-    games_played = Counter(pid for _label, _phase, pid, _placement, _points in results_rows)
-    max_games = max(games_played.values())
+    results_last_row = 1 + len(results_rows)
 
     generated_at = datetime.date.today().isoformat()
 
     wb = Workbook()
     build_overview(wb, generated_at)
-    build_roster_sheet(wb, breakdown, effective_by_id)
-    results_last_row = build_results_log_sheet(wb)
+    build_roster_sheet(wb, breakdown, effective_by_id, results_last_row)
+    build_results_log_sheet(wb)
     build_playoff_odds_sheet(wb, mc_stats)
     build_season_snapshot_sheet(wb, season_result)
-    build_player_detail_sheet(wb, set(effective_by_id), results_last_row, max_games)
+    history_wide = build_player_history_wide_sheets(wb, results_rows, player_ids)
+    build_player_detail_sheet(wb, player_ids, history_wide)
+    print("Precomputing all 4-player matchups (this takes about a minute)...")
+    matchup_last_row = build_matchup_data_sheet(wb, all_players, config)
+    build_matchup_predictor_sheet(wb, player_ids, matchup_last_row)
 
-    wb.move_sheet("Lists", offset=len(wb.sheetnames))
+    for hidden in ("PlayerHistoryLabels", "PlayerHistoryPoints", "MatchupData", "Lists"):
+        wb.move_sheet(hidden, offset=len(wb.sheetnames))
 
     import os
 
