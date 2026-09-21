@@ -3,6 +3,8 @@
     python -m beerio_kart.cli --sims 20000 --seed 42
     python -m beerio_kart.cli --config beerio_kart/config/players.yaml
     python -m beerio_kart.cli --verbose --seed 1
+    python -m beerio_kart.cli --config beerio_kart/config/players_calibrated.yaml \\
+        --matchup Kannon Sam Max Jorgen
 """
 from __future__ import annotations
 
@@ -10,6 +12,8 @@ import argparse
 import random
 
 from .match import MatchConfig
+from .matchup import estimate_matchup
+from .models import Player
 from .monte_carlo import PlayerStats, run_monte_carlo
 from .roster import default_roster, load_roster
 from .season import SeasonResult, run_season
@@ -44,6 +48,34 @@ def print_season_detail(result: SeasonResult) -> None:
     print("\nCHAMPION:", result.playoffs.champion)
 
 
+def format_matchup(players: list[Player], estimate) -> str:
+    rows = sorted(players, key=lambda p: -estimate.avg_points[p.id])
+    header = f"{'Player':<12}{'Skill':>8}{'Avg Points':>12}{'Win %':>8}"
+    lines = [header, "-" * len(header)]
+    for p in rows:
+        lines.append(
+            f"{p.name:<12}{p.skill:>8.1f}{estimate.avg_points[p.id]:>12.1f}"
+            f"{estimate.win_pct[p.id]:>7.1f}%"
+        )
+    lines.append(f"\n({estimate.trials} simulated matches)")
+    return "\n".join(lines)
+
+
+def run_matchup(names: list[str], groups: dict[str, list[Player]], config: MatchConfig, trials: int, rng) -> None:
+    by_name = {p.name: p for plist in groups.values() for p in plist}
+    if len(set(names)) != 4:
+        raise SystemExit("--matchup needs 4 distinct player names")
+    missing = [n for n in names if n not in by_name]
+    if missing:
+        available = ", ".join(sorted(by_name))
+        raise SystemExit(f"Unknown player(s): {', '.join(missing)}\nAvailable: {available}")
+
+    players = [by_name[n] for n in names]
+    estimate = estimate_matchup(players, config, rng, trials=trials)
+    print(f"Matchup: {' vs '.join(names)}\n")
+    print(format_matchup(players, estimate))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Beerio Kart league predictor")
     parser.add_argument("--config", help="YAML roster file (default: built-in equal-skill roster)")
@@ -59,6 +91,15 @@ def main() -> None:
     parser.add_argument(
         "--chaos-scale", type=float, default=1.0, help="in-game randomness; higher flattens skill gaps"
     )
+    parser.add_argument(
+        "--matchup",
+        nargs=4,
+        metavar=("PLAYER1", "PLAYER2", "PLAYER3", "PLAYER4"),
+        help="estimate scores for a specific 4-player matchup instead of a full season",
+    )
+    parser.add_argument(
+        "--matchup-trials", type=int, default=300, help="simulated matches to average for --matchup"
+    )
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -68,6 +109,10 @@ def main() -> None:
         impairment_coef=args.impairment_coef,
         chaos_scale=args.chaos_scale,
     )
+
+    if args.matchup:
+        run_matchup(args.matchup, groups, config, args.matchup_trials, rng)
+        return
 
     if args.verbose:
         print_season_detail(run_season(groups, config, rng))
