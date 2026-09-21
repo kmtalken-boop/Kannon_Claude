@@ -1,0 +1,29 @@
+# Beerio Kart league roster.
+#
+# Exactly 4 groups of 4 players. `skill` is any positive number -- think of
+# it like an Elo rating; only relative differences between players matter.
+# 1000 is a reasonable "average" starting point. Edit names/skills to match
+# your actual league, or leave skills equal if you don't have priors yet
+# (the model is then purely about how much luck -- races and beer timing --
+# decides the season).
+groups:
+  A:
+    - {name: Alice,   skill: 1050}
+    - {name: Bob,     skill: 980}
+    - {name: Charlie, skill: 1010}
+    - {name: Dana,    skill: 960}
+  B:
+    - {name: Evan,    skill: 1030}
+    - {name: Fiona,   skill: 1000}
+    - {name: Gabe,    skill: 970}
+    - {name: Holly,   skill: 1040}
+  C:
+    - {name: Ian,     skill: 1020}
+    - {name: Jill,    skill: 990}
+    - {name: Kyle,    skill: 1060}
+    - {name: Liam,    skill: 950}
+  D:
+    - {name: Maya,    skill: 1005}
+    - {name: Nate,    skill: 995}
+    - {name: Olive,   skill: 1015}
+    - {name: Percy,   skill: 985}
