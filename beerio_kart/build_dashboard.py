@@ -40,7 +40,7 @@ from .data.history_points import (
     SEASON_1_WEEKLY_POINTS,
     SEASON_2_WEEK_1_POINTS,
 )
-from .data.schedule import SEASON_2_ROSTER
+from .data.schedule import SEASON_2_KNOWN_RESULTS, SEASON_2_ROSTER
 from .match import MatchConfig
 from .matchup import estimate_matchup
 from .monte_carlo import run_monte_carlo
@@ -162,7 +162,10 @@ def build_overview(wb, generated_at):
         " rest of that match. The league's own random selector just shuffles which order the 32 races"
         " are played in -- that has no bearing on results here since races are otherwise symmetric.",
         "Season standings are each player's own points summed across their 3 (different-opponent)"
-        " monthly matches. The top 8 of all 16 make the playoffs, seeded 1-8 by that total.",
+        " monthly matches. The top 8 of all 16 make the playoffs, seeded 1-8 by that total. Where a"
+        " month's real recorded result is already known (currently 3 of September's 4 pods), that"
+        " actual result is used directly instead of simulating it -- see the checkmarks on"
+        " SeasonSnapshot.",
         "Seeds {1,2,7,8} race as one 4-way free-for-all; seeds {3,4,5,6} race as another. Top 2 from"
         " EACH of those two matches (4 players total) advance to a single winner-take-all final.",
     ]
@@ -350,13 +353,18 @@ def build_season_snapshot_sheet(wb, season_result):
     )
     row += 2
 
-    cell(ws, row, 1, "League phase (real monthly schedule)", font=SECTION_FONT, border=False)
+    cell(
+        ws, row, 1,
+        "League phase (real monthly schedule; ✓ = actual recorded result, otherwise simulated)",
+        font=SECTION_FONT, border=False,
+    )
     row += 1
     for month, pods in season_result.league.monthly_results.items():
         cell(ws, row, 1, month, font=BOLD_BODY_FONT, border=False)
         row += 1
         for pod_label, match in pods.items():
-            cell(ws, row, 1, pod_label)
+            is_known = (month, pod_label) in season_result.league.known_pods
+            cell(ws, row, 1, f"{pod_label} {'✓' if is_known else ''}")
             ranked = match.ranked()
             for i, pid in enumerate(ranked):
                 cell(ws, row, 2 + i, f"{pid} ({match.points[pid]})")
@@ -663,11 +671,13 @@ def main() -> None:
     player_ids = {p.name for p in players}
 
     mc_rng = random.Random(MC_SEED)
-    mc_stats = run_monte_carlo(players, schedule, config, SIMS, mc_rng)
+    mc_stats = run_monte_carlo(
+        players, schedule, config, SIMS, mc_rng, known_results=SEASON_2_KNOWN_RESULTS
+    )
     mc_stats = {s.name: s for s in mc_stats.values()}
 
     snapshot_rng = random.Random(SNAPSHOT_SEED)
-    season_result = run_season(schedule, config, snapshot_rng)
+    season_result = run_season(schedule, config, snapshot_rng, known_results=SEASON_2_KNOWN_RESULTS)
 
     results_rows = assemble_results_log()
     results_last_row = 1 + len(results_rows)

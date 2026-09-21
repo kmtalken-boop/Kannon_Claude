@@ -35,11 +35,12 @@ def run_monte_carlo(
     config: MatchConfig,
     n_sims: int,
     rng: random.Random,
+    known_results: dict[str, list[dict[str, int]]] | None = None,
 ) -> dict[str, PlayerStats]:
     stats: dict[str, PlayerStats] = {p.id: PlayerStats(name=p.name) for p in players}
 
     for _ in range(n_sims):
-        result = run_season(schedule, config, rng)
+        result = run_season(schedule, config, rng, known_results=known_results)
 
         for pid, pts in result.league.season_points.items():
             s = stats[pid]

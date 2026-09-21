@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import random
 
+from .data.schedule import SEASON_2_KNOWN_RESULTS
 from .match import MatchConfig
 from .matchup import estimate_matchup
 from .models import Player
@@ -32,13 +33,14 @@ def format_table(stats: dict[str, PlayerStats]) -> str:
 
 
 def print_season_detail(result: SeasonResult) -> None:
-    print("=== League phase ===")
+    print("=== League phase (* = real recorded result) ===")
     for month, pods in result.league.monthly_results.items():
         print(f"{month}:")
         for pod_label, match in pods.items():
+            is_known = (month, pod_label) in result.league.known_pods
             ranked = match.ranked()
             scores = ", ".join(f"{pid} {match.points[pid]}" for pid in ranked)
-            print(f"  {pod_label}: {scores}")
+            print(f"  {pod_label}{'*' if is_known else ''}: {scores}")
 
     print("\n=== Season standings (top 8 make playoffs) ===")
     ranked = sorted(result.league.season_points, key=lambda pid: -result.league.season_points[pid])
@@ -96,13 +98,18 @@ def main() -> None:
         "--impairment-coef", type=float, default=0.12, help="how hard accumulated beers hit effective skill"
     )
     parser.add_argument(
-        "--chaos-scale", type=float, default=1.15, help="in-game randomness; higher flattens skill gaps"
+        "--chaos-scale", type=float, default=1.5, help="in-game randomness; higher flattens skill gaps"
     )
     parser.add_argument(
         "--cpu-skill",
         type=float,
-        default=200.0,
+        default=140.0,
         help="skill of the 8 CPU racers filling out each 12-racer field",
+    )
+    parser.add_argument(
+        "--no-known-results",
+        action="store_true",
+        help="simulate every month even where a real recorded result exists (default: use real results when available)",
     )
     parser.add_argument(
         "--matchup",
@@ -124,15 +131,17 @@ def main() -> None:
         cpu_skill=args.cpu_skill,
     )
 
+    known_results = None if args.no_known_results else SEASON_2_KNOWN_RESULTS
+
     if args.matchup:
         run_matchup(args.matchup, players, config, args.matchup_trials, rng)
         return
 
     if args.verbose:
-        print_season_detail(run_season(schedule, config, rng))
+        print_season_detail(run_season(schedule, config, rng, known_results=known_results))
         return
 
-    stats = run_monte_carlo(players, schedule, config, args.sims, rng)
+    stats = run_monte_carlo(players, schedule, config, args.sims, rng, known_results=known_results)
     print(f"Ran {args.sims} simulated seasons\n")
     print(format_table(stats))
 

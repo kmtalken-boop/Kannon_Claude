@@ -106,15 +106,25 @@ isolated to one file so they're easy to change:
   `exp(-0.12 * impairment)`. These constants (`impairment_coef`,
   `decay_rate`) are guesses at "how much does getting drunk actually hurt
   your Mario Kart", tune them with `--impairment-coef` or in `MatchConfig`.
-- **`cpu_skill = 200`** (and `chaos_scale = 1.15`, up from an earlier
-  default of `1.0`): fit by hand against two real recorded matches
-  (Kannon/Jack/Christian/Peter and Isaiah/Harrison/Cailin/Ivan) so
-  simulated totals land in the same range as those two actually did.
-  It's one CPU skill level for every race regardless of who's driving —
-  real MKWii CPU difficulty may itself vary — so treat this as a
-  reasonable single-number stand-in, not a precise fit. Tune with
-  `--cpu-skill` if simulated match totals start looking off (too many
-  huge or tiny scores relative to what your league is actually seeing).
+- **`cpu_skill = 140`** and **`chaos_scale = 1.5`**: fit by hand against
+  two real recorded matches (Kannon/Jack/Christian/Peter and
+  Isaiah/Harrison/Cailin/Ivan), weighted to keep the weakest tracked
+  player (Ivan, 6.9 fitted skill) from getting crushed to single digits
+  the way a tighter fit implied — a real 12-racer field still has bad
+  nights, but not *that* bad, every time. It's one CPU skill level for
+  every race regardless of who's driving — real MKWii CPU difficulty may
+  itself vary — so treat this as a reasonable single-number stand-in, not
+  a precise fit. Tune with `--cpu-skill` / `--chaos-scale` if simulated
+  match totals start looking off relative to what your league is
+  actually seeing.
+- **Known results override simulation where available**
+  (`data/schedule.py`: `SEASON_2_KNOWN_RESULTS`, matched onto the
+  schedule by player-id set): 3 of September's 4 pods have a real
+  recorded result, so the simulator uses those actual points directly
+  instead of simulating that pod — only September's Group 4 and all of
+  October/November are actually simulated. Pass `--no-known-results` to
+  simulate everything instead. This is scoped to the real 16 names, so a
+  custom `--config` roster is unaffected (nothing to match).
 
 ## Performance
 

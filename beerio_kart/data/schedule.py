@@ -8,18 +8,18 @@ different monthly matches, and the top 8 of all 16 by that total make the
 playoffs directly -- there's no "top 2 from each group" step, since no
 group persists long enough to have its own standings.
 
-September's real results are already in ``history.py`` (that's
-``SEASON_2_WEEK_1_RESULTS`` -- same 3 pods, just given in a different
-name order there). October and November haven't been played yet; the
-season simulator plays all 3 months from the fitted skills, September
-included, rather than mixing known results with simulated ones -- a
-deliberate simplification (the fit already leans on the real September
-results through SEASON_2_RECENCY_WEIGHT) to keep one simulation
-mechanism for the whole season instead of two.
+September's real results are already known for 3 of its 4 pods (see
+``SEASON_2_KNOWN_RESULTS`` below, sourced from ``history_points.py``'s
+``SEASON_2_WEEK_1_POINTS``) -- the season simulator uses those actual
+points directly instead of simulating that pod, and only simulates from
+the fitted skills where the real result isn't known yet (September's
+Group 4, and all of October/November). October and November haven't
+been played yet.
 """
 from __future__ import annotations
 
 from ..models import Player
+from .history_points import SEASON_2_WEEK_1_POINTS
 
 def _roster_from(schedule: dict[str, dict[str, list[str]]]) -> list[str]:
     """The 16 distinct names in a schedule, in first-appearance order."""
@@ -90,3 +90,15 @@ def default_schedule(players: list[Player]) -> dict[str, dict[str, list[Player]]
         month: {label: [players[i] for i in idxs] for label, idxs in pods.items()}
         for month, pods in _SCHEDULE_SHAPE.items()
     }
+
+
+# Real recorded results, by month, as a list of {player name: points} maps
+# (one per pod that's actually been played). league.py matches these onto
+# the schedule by player-id set, not by pod label, so this works regardless
+# of how a roster labels its pods -- and simply doesn't match (falls back
+# to simulating) for any custom roster whose names aren't these exact 16.
+# September's Group 4 (Will, Stu, Maclane, Luke) isn't here because it was
+# never on the original tracking sheet -- it's still simulated.
+SEASON_2_KNOWN_RESULTS: dict[str, list[dict[str, int]]] = {
+    "September": [dict(results) for _label, results in SEASON_2_WEEK_1_POINTS],
+}

@@ -27,8 +27,8 @@ class MatchConfig:
     beers_per_player: int = 8
     impairment_coef: float = 0.12   # how hard accumulated beers drag down effective skill
     decay_rate: float = 0.85        # per-race multiplicative decay of impairment (sobering up)
-    chaos_scale: float = 1.15       # in-game randomness (items etc.); higher flattens skill gaps
-    cpu_skill: float = 200.0        # fixed skill of each of the 8 CPU racers filling out the field
+    chaos_scale: float = 1.5        # in-game randomness (items etc.); higher flattens skill gaps
+    cpu_skill: float = 140.0        # fixed skill of each of the 8 CPU racers filling out the field
     cpu_count: int = 8              # 4 humans + 8 CPUs = MKWii's real 12-racer field
 
 
