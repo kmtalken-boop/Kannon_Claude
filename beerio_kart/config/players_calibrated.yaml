@@ -1,0 +1,32 @@
+# Skill ratings fit from real historical results via a Plackett-Luce
+# MLE (see calibrate.py + build_roster_from_history.py). Only the 12
+# known recurring drivers are here -- this league needs 16 across 4
+# groups of 4, so 4 more players still need to be added by hand.
+groups:
+  A:
+  - name: Kannon
+    skill: 1642.2
+  - name: Budzy
+    skill: 1009.6
+  - name: Greg
+    skill: 1001.7
+  - name: Max
+    skill: 395.2
+  B:
+  - name: Will
+    skill: 1448.0
+  - name: Stu
+    skill: 1079.5
+  - name: Sam
+    skill: 838.5
+  - name: Peter
+    skill: 519.9
+  C:
+  - name: Jack
+    skill: 1391.4
+  - name: Jake
+    skill: 1225.8
+  - name: Isaiah
+    skill: 819.3
+  - name: Jorgen
+    skill: 703.6
