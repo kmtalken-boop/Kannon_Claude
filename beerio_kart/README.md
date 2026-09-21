@@ -87,9 +87,9 @@ isolated to one file so they're easy to change:
   seed_playoffs`), even though groups could face different-strength
   opposition. An alternative would be seeding 1-4 by group winners and 5-8
   by runners-up instead of pure points.
-- **"1 and 2 seeds play 7 and 8" is read as one 4-player match** with seeds
-  {1,2,7,8} together (not two separate 1-on-1 races), to stay consistent
-  with every other match in the league being a 4-driver field.
+- **Seeds {1,2,7,8} race as one 4-player free-for-all**, best 2 of the 4
+  advance — same format as every other match in the league (confirmed;
+  not two separate 1-on-1 races).
 - **Beer scheduling is independent per player** — each of the 4 racers in
   a match gets their own random set of 8 "drink now" races out of 32,
   rather than one shared schedule for the table. (`beer.py`)
