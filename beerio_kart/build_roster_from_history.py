@@ -12,6 +12,8 @@ call, not this script's, so it's never re-drafted or rebalanced here.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import yaml
 
 from .calibrate import fit_plackett_luce, strengths_to_skill
@@ -25,14 +27,36 @@ from .data.history import (
 )
 
 
-def build_calibrated_skills() -> dict[str, float]:
+@dataclass
+class SkillBreakdown:
+    fitted: float | None  # Plackett-Luce fit, pre-adjustment; None if no history
+    multiplier: float  # FORM_ADJUSTMENTS factor, 1.0 if none applies
+    manual_override: float | None  # MANUAL_SKILL_ESTIMATES value, if any
+    effective: float  # what actually goes into config YAML / the simulator
+
+
+def build_skill_breakdown() -> dict[str, SkillBreakdown]:
     strengths = fit_plackett_luce(ALL_RANKING_EVENTS, weights=ALL_RANKING_WEIGHTS)
-    skills = strengths_to_skill(strengths)
-    skills = {pid: skill for pid, skill in skills.items() if pid not in SUBSTITUTE_IDS}
-    for pid, multiplier in FORM_ADJUSTMENTS.items():
-        skills[pid] = skills[pid] * multiplier
-    skills.update(MANUAL_SKILL_ESTIMATES)
-    return skills
+    fitted = strengths_to_skill(strengths)
+    fitted = {pid: skill for pid, skill in fitted.items() if pid not in SUBSTITUTE_IDS}
+
+    all_ids = set(fitted) | set(MANUAL_SKILL_ESTIMATES)
+    breakdown: dict[str, SkillBreakdown] = {}
+    for pid in all_ids:
+        manual = MANUAL_SKILL_ESTIMATES.get(pid)
+        multiplier = FORM_ADJUSTMENTS.get(pid, 1.0)
+        if manual is not None:
+            effective = manual
+        else:
+            effective = fitted[pid] * multiplier
+        breakdown[pid] = SkillBreakdown(
+            fitted=fitted.get(pid), multiplier=multiplier, manual_override=manual, effective=effective
+        )
+    return breakdown
+
+
+def build_calibrated_skills() -> dict[str, float]:
+    return {pid: b.effective for pid, b in build_skill_breakdown().items()}
 
 
 def main() -> None:
