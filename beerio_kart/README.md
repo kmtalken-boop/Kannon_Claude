@@ -14,8 +14,13 @@ making the playoffs, reaching the final, and winning it all.
   of their own points across those 3 (different-opponent) matches ("total
   points over your 3 placement matches").
 - Each match is a full Mario Kart Wii GP session: **32 races** (8 cups × 4
-  tracks), scored with MKWii's own points table for a 4-driver field: **1st
-  = 15, 2nd = 12, 3rd = 10, 4th = 8**.
+  tracks). Every individual race is a full **12-racer field** — the 4
+  human players plus **8 CPU racers** filling out the rest of the grid —
+  scored on MKWii's real 12-place points table (**15/12/10/8/7/6/5/4/3/2/1/0**).
+  A human can land anywhere from 1st to 12th depending on the other 3
+  humans *and* the CPU field that race, which is what lets a weak
+  player's match total drop into single/double digits while a strong
+  player can approach (but rarely hit) the 15×32 = 480 max.
 - **The beer rule**: each player drinks **8 beers across the 32 races** in
   every match, at their own self-chosen pace — not assigned by anything
   external. (The league's own "random selector" just shuffles which order
@@ -101,6 +106,15 @@ isolated to one file so they're easy to change:
   `exp(-0.12 * impairment)`. These constants (`impairment_coef`,
   `decay_rate`) are guesses at "how much does getting drunk actually hurt
   your Mario Kart", tune them with `--impairment-coef` or in `MatchConfig`.
+- **`cpu_skill = 200`** (and `chaos_scale = 1.15`, up from an earlier
+  default of `1.0`): fit by hand against two real recorded matches
+  (Kannon/Jack/Christian/Peter and Isaiah/Harrison/Cailin/Ivan) so
+  simulated totals land in the same range as those two actually did.
+  It's one CPU skill level for every race regardless of who's driving —
+  real MKWii CPU difficulty may itself vary — so treat this as a
+  reasonable single-number stand-in, not a precise fit. Tune with
+  `--cpu-skill` if simulated match totals start looking off (too many
+  huge or tiny scores relative to what your league is actually seeing).
 
 ## Performance
 

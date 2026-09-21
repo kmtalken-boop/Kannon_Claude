@@ -96,7 +96,13 @@ def main() -> None:
         "--impairment-coef", type=float, default=0.12, help="how hard accumulated beers hit effective skill"
     )
     parser.add_argument(
-        "--chaos-scale", type=float, default=1.0, help="in-game randomness; higher flattens skill gaps"
+        "--chaos-scale", type=float, default=1.15, help="in-game randomness; higher flattens skill gaps"
+    )
+    parser.add_argument(
+        "--cpu-skill",
+        type=float,
+        default=200.0,
+        help="skill of the 8 CPU racers filling out each 12-racer field",
     )
     parser.add_argument(
         "--matchup",
@@ -115,6 +121,7 @@ def main() -> None:
         beers_per_player=args.beers_per_player,
         impairment_coef=args.impairment_coef,
         chaos_scale=args.chaos_scale,
+        cpu_skill=args.cpu_skill,
     )
 
     if args.matchup:

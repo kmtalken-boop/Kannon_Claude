@@ -153,8 +153,10 @@ def build_overview(wb, generated_at):
         "16 players, split into 4 groups of 4 that are redrawn every month for 3 months (September,"
         " October, November) -- nobody faces the same opponent twice. See the real schedule on the"
         " SeasonSnapshot tab.",
-        "Each match races Mario Kart Wii's full 32-race GP structure (8 cups x 4 tracks), MKWii's own"
-        " points table for a 4-driver field: 1st=15, 2nd=12, 3rd=10, 4th=8.",
+        "Each match races Mario Kart Wii's full 32-race GP structure (8 cups x 4 tracks). Every race is"
+        " a full 12-racer field -- the 4 humans plus 8 CPU racers -- scored on MKWii's real 12-place"
+        " points table (15/12/10/8/7/6/5/4/3/2/1/0), so a human can score anywhere from near 0 to 15"
+        " on a single race depending on the other 3 humans AND the CPU field that race.",
         "Each player drinks 8 beers over their match's 32 races, at their own self-chosen pace (not"
         " assigned by anything external); accumulated impairment drags down effective skill for the"
         " rest of that match. The league's own random selector just shuffles which order the 32 races"
