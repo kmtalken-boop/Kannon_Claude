@@ -1,45 +1,102 @@
-# Skill ratings fit from real historical results via a recency-weighted
-# Plackett-Luce MLE (see calibrate.py + build_roster_from_history.py),
-# placed into this season's real groups (data/history.py: SEASON_2_GROUPS).
-# Maclane and Luke have no race history yet, so their skill is a manual
-# estimate (MANUAL_SKILL_ESTIMATES) -- replace it once they've actually
-# raced. Max's fitted skill is multiplied by a manual form adjustment
-# (FORM_ADJUSTMENTS) reflecting the league's read that he's improved
-# beyond what his single season-2 result shows.
-groups:
-  A:
-  - name: Kannon
-    skill: 2463.9
-  - name: Jack
-    skill: 1668.6
-  - name: Christian
-    skill: 814.0
-  - name: Peter
-    skill: 290.5
-  B:
-  - name: Sam
-    skill: 1019.2
-  - name: Jackson
-    skill: 840.5
-  - name: Max
-    skill: 825.4
-  - name: Jorgen
-    skill: 262.8
-  C:
-  - name: Isaiah
-    skill: 1204.0
-  - name: Harrison
-    skill: 1169.9
-  - name: Cailin
-    skill: 779.9
-  - name: Ivan
-    skill: 390.0
-  D:
-  - name: Will
-    skill: 1126.2
-  - name: Stu
-    skill: 1199.0
-  - name: Maclane
-    skill: 826.0
-  - name: Luke
-    skill: 826.0
+# Skill ratings fit from real historical results (season 1 weeks/playoffs,
+# season 2 week 1, and the league's own full-roster ranking) via a
+# recency-weighted Plackett-Luce MLE -- see calibrate.py and
+# build_roster_from_history.py. The schedule below is this season's real
+# monthly rotation (data/schedule.py: SEASON_2_SCHEDULE).
+players:
+- name: Kannon
+  skill: 4170.8
+- name: Peter
+  skill: 172.2
+- name: Christian
+  skill: 620.1
+- name: Jack
+  skill: 2517.0
+- name: Sam
+  skill: 1882.1
+- name: Max
+  skill: 337.0
+- name: Jorgen
+  skill: 115.1
+- name: Jackson
+  skill: 825.7
+- name: Isaiah
+  skill: 1168.6
+- name: Cailin
+  skill: 82.9
+- name: Harrison
+  skill: 335.1
+- name: Ivan
+  skill: 6.9
+- name: Luke
+  skill: 25.9
+- name: Maclane
+  skill: 54.6
+- name: Will
+  skill: 1649.8
+- name: Stu
+  skill: 1455.0
+schedule:
+  September:
+    Group 1:
+    - Kannon
+    - Peter
+    - Christian
+    - Jack
+    Group 2:
+    - Sam
+    - Max
+    - Jorgen
+    - Jackson
+    Group 3:
+    - Isaiah
+    - Cailin
+    - Harrison
+    - Ivan
+    Group 4:
+    - Luke
+    - Maclane
+    - Will
+    - Stu
+  October:
+    Group 1:
+    - Kannon
+    - Sam
+    - Isaiah
+    - Luke
+    Group 2:
+    - Peter
+    - Max
+    - Cailin
+    - Maclane
+    Group 3:
+    - Christian
+    - Jorgen
+    - Harrison
+    - Will
+    Group 4:
+    - Jack
+    - Jackson
+    - Ivan
+    - Stu
+  November:
+    Group 1:
+    - Kannon
+    - Jackson
+    - Harrison
+    - Maclane
+    Group 2:
+    - Peter
+    - Sam
+    - Ivan
+    - Will
+    Group 3:
+    - Christian
+    - Max
+    - Isaiah
+    - Stu
+    Group 4:
+    - Jack
+    - Jorgen
+    - Cailin
+    - Luke

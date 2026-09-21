@@ -21,11 +21,11 @@ from .season import SeasonResult, run_season
 
 def format_table(stats: dict[str, PlayerStats]) -> str:
     rows = sorted((s.as_row() for s in stats.values()), key=lambda r: -r["champion_pct"])
-    header = f"{'Player':<10}{'Grp':<5}{'Avg Pts':>9}{'Playoffs%':>11}{'Finals%':>9}{'Champ%':>8}"
+    header = f"{'Player':<12}{'Avg Pts':>9}{'Playoffs%':>11}{'Finals%':>9}{'Champ%':>8}"
     lines = [header, "-" * len(header)]
     for r in rows:
         lines.append(
-            f"{r['name']:<10}{r['group']:<5}{r['avg_points']:>9.1f}"
+            f"{r['name']:<12}{r['avg_points']:>9.1f}"
             f"{r['playoff_pct']:>10.1f}%{r['finals_pct']:>8.1f}%{r['champion_pct']:>7.1f}%"
         )
     return "\n".join(lines)
@@ -33,11 +33,18 @@ def format_table(stats: dict[str, PlayerStats]) -> str:
 
 def print_season_detail(result: SeasonResult) -> None:
     print("=== League phase ===")
-    for name, group in result.groups.items():
-        print(f"Group {name}:")
-        for rank, pid in enumerate(group.standings(), start=1):
-            tag = "  <- advances" if rank <= 2 else ""
-            print(f"  {rank}. {pid:<10} {group.season_points[pid]:>4} pts{tag}")
+    for month, pods in result.league.monthly_results.items():
+        print(f"{month}:")
+        for pod_label, match in pods.items():
+            ranked = match.ranked()
+            scores = ", ".join(f"{pid} {match.points[pid]}" for pid in ranked)
+            print(f"  {pod_label}: {scores}")
+
+    print("\n=== Season standings (top 8 make playoffs) ===")
+    ranked = sorted(result.league.season_points, key=lambda pid: -result.league.season_points[pid])
+    for rank, pid in enumerate(ranked, start=1):
+        tag = "  <- makes playoffs" if rank <= 8 else ""
+        print(f"  {rank}. {pid:<10} {result.league.season_points[pid]:>5} pts{tag}")
 
     print("\n=== Playoffs ===")
     print("Seeds:", ", ".join(f"{i + 1}:{pid}" for i, pid in enumerate(result.playoffs.seeds)))
@@ -61,8 +68,8 @@ def format_matchup(players: list[Player], estimate) -> str:
     return "\n".join(lines)
 
 
-def run_matchup(names: list[str], groups: dict[str, list[Player]], config: MatchConfig, trials: int, rng) -> None:
-    by_name = {p.name: p for plist in groups.values() for p in plist}
+def run_matchup(names: list[str], players: list[Player], config: MatchConfig, trials: int, rng) -> None:
+    by_name = {p.name: p for p in players}
     if len(set(names)) != 4:
         raise SystemExit("--matchup needs 4 distinct player names")
     missing = [n for n in names if n not in by_name]
@@ -70,10 +77,10 @@ def run_matchup(names: list[str], groups: dict[str, list[Player]], config: Match
         available = ", ".join(sorted(by_name))
         raise SystemExit(f"Unknown player(s): {', '.join(missing)}\nAvailable: {available}")
 
-    players = [by_name[n] for n in names]
-    estimate = estimate_matchup(players, config, rng, trials=trials)
+    matchup_players = [by_name[n] for n in names]
+    estimate = estimate_matchup(matchup_players, config, rng, trials=trials)
     print(f"Matchup: {' vs '.join(names)}\n")
-    print(format_matchup(players, estimate))
+    print(format_matchup(matchup_players, estimate))
 
 
 def main() -> None:
@@ -103,7 +110,7 @@ def main() -> None:
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
-    groups = load_roster(args.config) if args.config else default_roster()
+    players, schedule = load_roster(args.config) if args.config else default_roster()
     config = MatchConfig(
         beers_per_player=args.beers_per_player,
         impairment_coef=args.impairment_coef,
@@ -111,14 +118,14 @@ def main() -> None:
     )
 
     if args.matchup:
-        run_matchup(args.matchup, groups, config, args.matchup_trials, rng)
+        run_matchup(args.matchup, players, config, args.matchup_trials, rng)
         return
 
     if args.verbose:
-        print_season_detail(run_season(groups, config, rng))
+        print_season_detail(run_season(schedule, config, rng))
         return
 
-    stats = run_monte_carlo(groups, config, args.sims, rng)
+    stats = run_monte_carlo(players, schedule, config, args.sims, rng)
     print(f"Ran {args.sims} simulated seasons\n")
     print(format_table(stats))
 

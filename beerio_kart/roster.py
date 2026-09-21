@@ -1,46 +1,58 @@
-"""Building / loading the 16-player roster and its 4 fixed groups."""
+"""Building / loading the 16-player roster and its monthly schedule."""
 from __future__ import annotations
 
 import yaml
 
+from .data.schedule import default_schedule
 from .models import Player
 
 
-def default_roster() -> dict[str, list[Player]]:
-    """16 players, equal skill, split into 4 groups of 4 (A-D)."""
-    groups: dict[str, list[Player]] = {}
-    for g in range(4):
-        group_name = chr(ord("A") + g)
-        players = [
-            Player(id=f"{group_name}{i + 1}", name=f"Player {g * 4 + i + 1}", skill=1000.0)
-            for i in range(4)
-        ]
-        groups[group_name] = players
-    return groups
+def default_players() -> list[Player]:
+    """16 players, equal skill -- a generic fallback roster."""
+    return [Player(id=f"Player {i + 1}", name=f"Player {i + 1}", skill=1000.0) for i in range(16)]
 
 
-def load_roster(path: str) -> dict[str, list[Player]]:
-    """Load a roster from YAML: 4 groups of 4 {name, skill} entries.
+def default_roster() -> tuple[list[Player], dict[str, dict[str, list[Player]]]]:
+    """Equal-skill players plus a generic (but validated, no repeated
+    pairings) 3-month schedule -- used when no config file is given.
+    """
+    players = default_players()
+    return players, default_schedule(players)
 
-    See config/players.yaml for the expected format.
+
+def load_roster(path: str) -> tuple[list[Player], dict[str, dict[str, list[Player]]]]:
+    """Load 16 players (name + skill) and their monthly schedule from YAML.
+
+    Expects a flat ``players:`` list of ``{name, skill}``. An optional
+    ``schedule:`` section (month -> pod label -> 4 names) is used as-is if
+    present; otherwise a generic, validated 3-month rotation is generated
+    from the player list's order. See config/players_calibrated.yaml for
+    the real schedule, or config/players.yaml for the generic version.
     """
     with open(path) as f:
         data = yaml.safe_load(f)
 
-    raw_groups = data.get("groups", {})
-    if len(raw_groups) != 4:
-        raise ValueError(f"expected 4 groups, got {len(raw_groups)}")
+    entries = data.get("players", [])
+    if len(entries) != 16:
+        raise ValueError(f"expected 16 players, got {len(entries)}")
 
-    groups: dict[str, list[Player]] = {}
-    for group_name, entries in raw_groups.items():
-        if len(entries) != 4:
-            raise ValueError(f"group {group_name} must have exactly 4 players, got {len(entries)}")
-        groups[group_name] = [
-            Player(
-                id=f"{group_name}_{entry['name']}",
-                name=entry["name"],
-                skill=float(entry.get("skill", 1000.0)),
-            )
-            for entry in entries
-        ]
-    return groups
+    players = [
+        Player(id=entry["name"], name=entry["name"], skill=float(entry.get("skill", 1000.0)))
+        for entry in entries
+    ]
+    players_by_name = {p.name: p for p in players}
+    if len(players_by_name) != len(players):
+        raise ValueError("player names must be unique")
+
+    raw_schedule = data.get("schedule")
+    if raw_schedule:
+        schedule = {
+            month: {
+                label: [players_by_name[name] for name in names] for label, names in pods.items()
+            }
+            for month, pods in raw_schedule.items()
+        }
+    else:
+        schedule = default_schedule(players)
+
+    return players, schedule

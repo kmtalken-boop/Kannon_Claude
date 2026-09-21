@@ -34,19 +34,17 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-import yaml
-
 from .build_roster_from_history import build_skill_breakdown
-from .data.history import SEASON_2_GROUPS
 from .data.history_points import (
     SEASON_1_PLAYOFF_POINTS,
     SEASON_1_WEEKLY_POINTS,
     SEASON_2_WEEK_1_POINTS,
 )
+from .data.schedule import SEASON_2_ROSTER
 from .match import MatchConfig
 from .matchup import estimate_matchup
-from .models import Player
 from .monte_carlo import run_monte_carlo
+from .roster import load_roster
 from .season import run_season
 
 FONT_NAME = "Arial"
@@ -121,23 +119,6 @@ def assemble_results_log():
     return rows
 
 
-def load_groups_plain_ids(path: str) -> dict[str, list[Player]]:
-    """Like roster.load_roster, but ids are the bare player name (no
-    group prefix) -- this dashboard's ResultsLog/Roster/PlayoffOdds sheets
-    all key off plain names, and every real name here is already unique
-    across the whole 16-player roster, so the prefix roster.py normally
-    adds for safety would only make season-snapshot output harder to read.
-    """
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    return {
-        group_name: [
-            Player(id=e["name"], name=e["name"], skill=float(e.get("skill", 1000.0))) for e in entries
-        ]
-        for group_name, entries in data["groups"].items()
-    }
-
-
 # ---------------------------------------------------------------------------
 # Sheet builders
 # ---------------------------------------------------------------------------
@@ -169,14 +150,17 @@ def build_overview(wb, generated_at):
     cell(ws, r, 1, "League format", font=SECTION_FONT, border=False)
     r += 1
     facts = [
-        "16 players in 4 fixed groups of 4 (A-D).",
-        "Each group plays a match once a month for 3 months; standings are total points across those 3 matches.",
+        "16 players, split into 4 groups of 4 that are redrawn every month for 3 months (September,"
+        " October, November) -- nobody faces the same opponent twice. See the real schedule on the"
+        " SeasonSnapshot tab.",
         "Each match races Mario Kart Wii's full 32-race GP structure (8 cups x 4 tracks), MKWii's own"
         " points table for a 4-driver field: 1st=15, 2nd=12, 3rd=10, 4th=8.",
-        "Each player must drink 8 beers across their match's 32 races; a random selector decides which"
-        " races trigger each beer, and accumulated impairment drags down effective skill for the rest"
-        " of that match.",
-        "Top 2 from each group (8 total) make the playoffs, seeded 1-8 by season points.",
+        "Each player drinks 8 beers over their match's 32 races, at their own self-chosen pace (not"
+        " assigned by anything external); accumulated impairment drags down effective skill for the"
+        " rest of that match. The league's own random selector just shuffles which order the 32 races"
+        " are played in -- that has no bearing on results here since races are otherwise symmetric.",
+        "Season standings are each player's own points summed across their 3 (different-opponent)"
+        " monthly matches. The top 8 of all 16 make the playoffs, seeded 1-8 by that total.",
         "Seeds {1,2,7,8} race as one 4-way free-for-all; seeds {3,4,5,6} race as another. Top 2 from"
         " EACH of those two matches (4 players total) advance to a single winner-take-all final.",
     ]
@@ -230,27 +214,25 @@ def build_overview(wb, generated_at):
 def build_roster_sheet(wb, breakdown, effective_by_id, results_last_row):
     ws = wb.create_sheet("Roster")
     headers = [
-        "Group", "Player", "Fitted Skill", "Adjustment Multiplier", "Manual Override",
+        "Player", "Fitted Skill", "Adjustment Multiplier", "Manual Override",
         "Effective Skill", "Games (History)", "Avg Points (Real)", "Notes",
     ]
     header_row(ws, 1, headers)
 
-    rostered = [(g, pid) for g, members in SEASON_2_GROUPS.items() for pid in members]
-    rostered.sort(key=lambda gp: (gp[0], -effective_by_id[gp[1]]))
+    rostered = sorted(SEASON_2_ROSTER, key=lambda pid: -effective_by_id[pid])
 
     row = 2
-    for group, pid in rostered:
+    for pid in rostered:
         b = breakdown[pid]
-        cell(ws, row, 1, group)
-        cell(ws, row, 2, pid, font=BOLD_BODY_FONT)
-        cell(ws, row, 3, b.fitted, fill=COMPUTED_FILL, fmt="#,##0.0")
-        cell(ws, row, 4, b.multiplier, font=INPUT_FONT, fill=INPUT_FILL, fmt="0.00")
-        cell(ws, row, 5, b.manual_override, font=INPUT_FONT, fill=INPUT_FILL, fmt="#,##0.0")
-        cell(ws, row, 6, f"=IF(E{row}=\"\",C{row}*D{row},E{row})", fmt="#,##0.0")
-        cell(ws, row, 7, f'=COUNTIF(ResultsLog!$C$2:$C${results_last_row},B{row})')
+        cell(ws, row, 1, pid, font=BOLD_BODY_FONT)
+        cell(ws, row, 2, b.fitted, fill=COMPUTED_FILL, fmt="#,##0.0")
+        cell(ws, row, 3, b.multiplier, font=INPUT_FONT, fill=INPUT_FILL, fmt="0.00")
+        cell(ws, row, 4, b.manual_override, font=INPUT_FONT, fill=INPUT_FILL, fmt="#,##0.0")
+        cell(ws, row, 5, f"=IF(D{row}=\"\",B{row}*C{row},D{row})", fmt="#,##0.0")
+        cell(ws, row, 6, f'=COUNTIF(ResultsLog!$C$2:$C${results_last_row},A{row})')
         cell(
-            ws, row, 8,
-            f'=IFERROR(AVERAGEIF(ResultsLog!$C$2:$C${results_last_row},B{row},'
+            ws, row, 7,
+            f'=IFERROR(AVERAGEIF(ResultsLog!$C$2:$C${results_last_row},A{row},'
             f'ResultsLog!$E$2:$E${results_last_row}),"n/a")',
             fmt="#,##0.0",
         )
@@ -259,12 +241,12 @@ def build_roster_sheet(wb, breakdown, effective_by_id, results_last_row):
             note = "No race history yet -- manual estimate (see league read)."
         elif b.multiplier != 1.0:
             note = f"Form-adjusted x{b.multiplier}: fitted skill understates recent improvement."
-        cell(ws, row, 9, note)
+        cell(ws, row, 8, note)
         row += 1
 
     last_row = row - 1
-    make_table(ws, "RosterTable", f"A1:I{last_row}")
-    autosize(ws, [8, 12, 13, 20, 16, 15, 15, 16, 55])
+    make_table(ws, "RosterTable", f"A1:H{last_row}")
+    autosize(ws, [12, 13, 20, 16, 15, 15, 16, 55])
 
     row += 1
     cell(
@@ -275,7 +257,7 @@ def build_roster_sheet(wb, breakdown, effective_by_id, results_last_row):
         " the Monte Carlo simulator to refresh the PlayoffOdds tab.",
         border=False,
     )
-    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=9)
+    ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=8)
     ws.cell(row=row, column=1).alignment = Alignment(wrap_text=True)
     ws.row_dimensions[row].height = 30
 
@@ -298,7 +280,7 @@ def build_results_log_sheet(wb):
 
 def build_playoff_odds_sheet(wb, mc_stats):
     ws = wb.create_sheet("PlayoffOdds")
-    headers = ["Player", "Group", "Effective Skill", "Avg Season Points (sim)", "Playoff %", "Finals %", "Championship %"]
+    headers = ["Player", "Effective Skill", "Avg Season Points (sim)", "Playoff %", "Finals %", "Championship %"]
     header_row(ws, 1, headers)
 
     ranked = sorted(mc_stats.items(), key=lambda kv: -kv[1].championships)
@@ -306,18 +288,17 @@ def build_playoff_odds_sheet(wb, mc_stats):
     for pid, s in ranked:
         r = s.as_row()
         cell(ws, row, 1, pid, font=BOLD_BODY_FONT)
-        cell(ws, row, 2, f'=INDEX(Roster!A:A,MATCH(A{row},Roster!B:B,0))')
-        cell(ws, row, 3, f'=INDEX(Roster!F:F,MATCH(A{row},Roster!B:B,0))', fmt="#,##0.0")
-        cell(ws, row, 4, r["avg_points"], fmt="#,##0.0")
-        cell(ws, row, 5, r["playoff_pct"] / 100.0, fmt="0.0%")
-        cell(ws, row, 6, r["finals_pct"] / 100.0, fmt="0.0%")
-        cell(ws, row, 7, r["champion_pct"] / 100.0, fmt="0.0%")
+        cell(ws, row, 2, f'=INDEX(Roster!E:E,MATCH(A{row},Roster!A:A,0))', fmt="#,##0.0")
+        cell(ws, row, 3, r["avg_points"], fmt="#,##0.0")
+        cell(ws, row, 4, r["playoff_pct"] / 100.0, fmt="0.0%")
+        cell(ws, row, 5, r["finals_pct"] / 100.0, fmt="0.0%")
+        cell(ws, row, 6, r["champion_pct"] / 100.0, fmt="0.0%")
         row += 1
     last_row = row - 1
-    make_table(ws, "PlayoffOddsTable", f"A1:G{last_row}")
-    autosize(ws, [12, 8, 15, 22, 12, 12, 16])
+    make_table(ws, "PlayoffOddsTable", f"A1:F{last_row}")
+    autosize(ws, [12, 15, 22, 12, 12, 16])
 
-    for col in ("E", "F", "G"):
+    for col in ("D", "E", "F"):
         ws.conditional_formatting.add(
             f"{col}2:{col}{last_row}",
             DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1, color="638EC6"),
@@ -332,7 +313,7 @@ def build_playoff_odds_sheet(wb, mc_stats):
         " to refresh after changing skills.",
         border=False,
     )
-    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=7)
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=6)
     ws.cell(row=note_row, column=1).alignment = Alignment(wrap_text=True)
     ws.row_dimensions[note_row].height = 30
 
@@ -341,18 +322,18 @@ def build_playoff_odds_sheet(wb, mc_stats):
     chart.y_axis.title = "Championship %"
     chart.y_axis.numFmt = "0%"
     chart.style = 10
-    data = Reference(ws, min_col=7, min_row=1, max_row=last_row)
+    data = Reference(ws, min_col=6, min_row=1, max_row=last_row)
     cats = Reference(ws, min_col=1, min_row=2, max_row=last_row)
     chart.add_data(data, titles_from_data=True)
     chart.set_categories(cats)
     chart.width = 24
     chart.height = 12
-    ws.add_chart(chart, f"I2")
+    ws.add_chart(chart, "H2")
 
 
 def build_season_snapshot_sheet(wb, season_result):
     ws = wb.create_sheet("SeasonSnapshot")
-    autosize(ws, [10, 8, 14, 10, 16])
+    autosize(ws, [22, 18, 18, 18, 18])
     row = 1
     cell(
         ws, row, 1, f"Illustrative simulated season (one draw, seed={SNAPSHOT_SEED})",
@@ -367,20 +348,33 @@ def build_season_snapshot_sheet(wb, season_result):
     )
     row += 2
 
-    cell(ws, row, 1, "League phase", font=SECTION_FONT, border=False)
+    cell(ws, row, 1, "League phase (real monthly schedule)", font=SECTION_FONT, border=False)
     row += 1
-    for group_name, group in season_result.groups.items():
-        cell(ws, row, 1, f"Group {group_name}", font=BOLD_BODY_FONT, border=False)
+    for month, pods in season_result.league.monthly_results.items():
+        cell(ws, row, 1, month, font=BOLD_BODY_FONT, border=False)
         row += 1
-        header_row(ws, row, ["Rank", "Player", "Points", "Advances"])
-        row += 1
-        for rank, pid in enumerate(group.standings(), start=1):
-            cell(ws, row, 1, rank, fmt="0")
-            cell(ws, row, 2, pid)
-            cell(ws, row, 3, group.season_points[pid], fmt="#,##0")
-            cell(ws, row, 4, "Yes" if rank <= 2 else "")
+        for pod_label, match in pods.items():
+            cell(ws, row, 1, pod_label)
+            ranked = match.ranked()
+            for i, pid in enumerate(ranked):
+                cell(ws, row, 2 + i, f"{pid} ({match.points[pid]})")
             row += 1
         row += 1
+
+    cell(ws, row, 1, "Season standings (top 8 make playoffs)", font=SECTION_FONT, border=False)
+    row += 1
+    header_row(ws, row, ["Rank", "Player", "Season Points", "Makes Playoffs"])
+    row += 1
+    season_ranked = sorted(
+        season_result.league.season_points, key=lambda pid: -season_result.league.season_points[pid]
+    )
+    for rank, pid in enumerate(season_ranked, start=1):
+        cell(ws, row, 1, rank, fmt="0")
+        cell(ws, row, 2, pid)
+        cell(ws, row, 3, season_result.league.season_points[pid], fmt="#,##0")
+        cell(ws, row, 4, "Yes" if rank <= 8 else "")
+        row += 1
+    row += 1
 
     playoffs = season_result.playoffs
     cell(ws, row, 1, "Playoffs", font=SECTION_FONT, border=False)
@@ -594,17 +588,16 @@ def build_player_detail_sheet(wb, player_ids, history_wide):
     cell(ws, 2, 1, default_player, font=Font(name=FONT_NAME, bold=True, size=13), fill=INPUT_FILL)
     dv.add(ws["A2"])
 
-    labels = ["Group", "Effective Skill", "Games (History)", "Avg Points (Real)", "Playoff %", "Finals %", "Championship %"]
+    labels = ["Effective Skill", "Games (History)", "Avg Points (Real)", "Playoff %", "Finals %", "Championship %"]
     formulas = [
-        '=INDEX(Roster!A:A,MATCH($A$2,Roster!B:B,0))',
-        '=INDEX(Roster!F:F,MATCH($A$2,Roster!B:B,0))',
-        '=INDEX(Roster!G:G,MATCH($A$2,Roster!B:B,0))',
-        '=INDEX(Roster!H:H,MATCH($A$2,Roster!B:B,0))',
+        '=INDEX(Roster!E:E,MATCH($A$2,Roster!A:A,0))',
+        '=INDEX(Roster!F:F,MATCH($A$2,Roster!A:A,0))',
+        '=INDEX(Roster!G:G,MATCH($A$2,Roster!A:A,0))',
+        '=IFERROR(INDEX(PlayoffOdds!D:D,MATCH($A$2,PlayoffOdds!A:A,0)),"n/a")',
         '=IFERROR(INDEX(PlayoffOdds!E:E,MATCH($A$2,PlayoffOdds!A:A,0)),"n/a")',
         '=IFERROR(INDEX(PlayoffOdds!F:F,MATCH($A$2,PlayoffOdds!A:A,0)),"n/a")',
-        '=IFERROR(INDEX(PlayoffOdds!G:G,MATCH($A$2,PlayoffOdds!A:A,0)),"n/a")',
     ]
-    fmts = [None, "#,##0.0", "0", "#,##0.0", "0.0%", "0.0%", "0.0%"]
+    fmts = ["#,##0.0", "0", "#,##0.0", "0.0%", "0.0%", "0.0%"]
     row = 4
     for label, formula, fmt in zip(labels, formulas, fmts):
         cell(ws, row, 1, label, font=BOLD_BODY_FONT)
@@ -659,25 +652,20 @@ def main() -> None:
     breakdown = build_skill_breakdown()
     effective_by_id = {pid: b.effective for pid, b in breakdown.items()}
 
-    groups = load_groups_plain_ids(ROSTER_YAML)
+    players, schedule = load_roster(ROSTER_YAML)
     config = MatchConfig()
-    all_players = [p for plist in groups.values() for p in plist]
     # Scope dropdowns/lookups to the 16 rostered players only. breakdown
     # also carries Jake/Greg (real history, but not on this season's
     # roster) -- selectable there, they'd fail every Roster/MatchupData
     # lookup below with a bare #N/A.
-    player_ids = {p.name for p in all_players}
+    player_ids = {p.name for p in players}
 
     mc_rng = random.Random(MC_SEED)
-    mc_stats = run_monte_carlo(groups, config, SIMS, mc_rng)
-    # monte_carlo keys by player id, which load_groups_plain_ids already
-    # set to the bare name, so this dict is already keyed the same way
-    # Roster/ResultsLog/PlayoffOdds are.
+    mc_stats = run_monte_carlo(players, schedule, config, SIMS, mc_rng)
     mc_stats = {s.name: s for s in mc_stats.values()}
 
     snapshot_rng = random.Random(SNAPSHOT_SEED)
-    snapshot_groups = {name: list(players) for name, players in groups.items()}
-    season_result = run_season(snapshot_groups, config, snapshot_rng)
+    season_result = run_season(schedule, config, snapshot_rng)
 
     results_rows = assemble_results_log()
     results_last_row = 1 + len(results_rows)
@@ -693,7 +681,7 @@ def main() -> None:
     history_wide = build_player_history_wide_sheets(wb, results_rows, player_ids)
     build_player_detail_sheet(wb, player_ids, history_wide)
     print("Precomputing all 4-player matchups (this takes about a minute)...")
-    matchup_last_row = build_matchup_data_sheet(wb, all_players, config)
+    matchup_last_row = build_matchup_data_sheet(wb, players, config)
     build_matchup_predictor_sheet(wb, player_ids, matchup_last_row)
 
     for hidden in ("PlayerHistoryLabels", "PlayerHistoryPoints", "MatchupData", "Lists"):

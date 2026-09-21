@@ -7,25 +7,29 @@ making the playoffs, reaching the final, and winning it all.
 
 ## League structure implemented
 
-- **16 players** split into **4 fixed groups of 4** (A-D).
-- **League phase**: each group plays a match once a month for **3 months**,
-  always the same 4 group-mates. Since groups never change, no player ever
-  races anyone outside their own group — that's what "no player plays
-  another more than once in league play" means here. A player's season
-  score is the sum of their points across those 3 matches ("total points
-  over your 3 placement matches").
+- **16 players**, split into **4 groups of 4 that are redrawn every
+  month** (`data/schedule.py`) — nobody faces the same opponent twice
+  across the 3 monthly rounds, which is what "no player plays another more
+  than once in league play" means here. A player's season score is the sum
+  of their own points across those 3 (different-opponent) matches ("total
+  points over your 3 placement matches").
 - Each match is a full Mario Kart Wii GP session: **32 races** (8 cups × 4
   tracks), scored with MKWii's own points table for a 4-driver field: **1st
   = 15, 2nd = 12, 3rd = 10, 4th = 8**.
-- **The beer rule**: each player must drink **8 beers across the 32
-  races** in every match. *Which* races trigger each of their 8 beers is
-  chosen by a random selector, independently per player. Each beer adds
-  "impairment" that decays a bit every race (sobering up) but drags down
-  that player's effective skill for the rest of the session while it's
-  elevated — so bad luck on the selector (beers bunched up early/late) can
-  genuinely tank a session.
-- **Playoffs**: top 2 from each group (8 players) qualify and are seeded
-  1-8 by total league points, compared directly across groups. Seeds
+- **The beer rule**: each player drinks **8 beers across the 32 races** in
+  every match, at their own self-chosen pace — not assigned by anything
+  external. (The league's own "random selector" just shuffles which order
+  the 32 races are played in; since races are otherwise symmetric here,
+  that ordering has no effect on the simulation and isn't modeled
+  separately.) There's no data on any individual's real pacing habits, and
+  pace clearly varies person to person, so each player's beer timing is
+  drawn independently at random — a stand-in for that unknown personal
+  pacing. Each beer adds "impairment" that decays a bit every race
+  (sobering up) but drags down that player's effective skill for the rest
+  of the session while it's elevated.
+- **Playoffs**: the **top 8 of all 16 players** by total season points
+  qualify, seeded 1-8 directly by that total (there's no group-standings
+  step — groups don't persist long enough to have their own). Seeds
   **{1, 2, 7, 8}** play one 4-player match; seeds **{3, 4, 5, 6}** play a
   second 4-player match (the "semifinal"). The **top 2 finishers from each
   of those two matches** (4 players total) advance to a single
@@ -64,10 +68,13 @@ python3 -m beerio_kart.cli --beers-per-player 6 --impairment-coef 0.2 --chaos-sc
 ```
 
 Edit `beerio_kart/config/players.yaml` with your real players' names and
-groups. `skill` is an arbitrary rating (like Elo) — only the differences
-between players matter, 1000 is a reasonable "average." If you don't have
-real skill priors yet, leave everyone equal: the model then shows how much
-of the season is pure race/beer luck.
+skills (a flat 16-player list). `skill` is an arbitrary rating (like Elo) —
+only the differences between players matter, 1000 is a reasonable
+"average." If you don't have real skill priors yet, leave everyone equal:
+the model then shows how much of the season is pure race/beer luck. An
+optional `schedule:` section lets you specify the real monthly groups;
+omit it and a generic (but still validated — nobody repeats an opponent)
+3-month rotation is generated automatically.
 
 Run the test suite:
 
@@ -80,13 +87,9 @@ python3 -m unittest discover -s beerio_kart/tests -p "test_*.py"
 The prompt left a few specifics unstated; these are the calls made, each
 isolated to one file so they're easy to change:
 
-- **Groups are fixed for the whole season** (`roster.py`) rather than
-  reshuffled between the 3 monthly matches. This is what makes "no player
-  plays another more than once" automatically true.
-- **Cross-group playoff seeding uses raw point totals** (`playoffs.py:
-  seed_playoffs`), even though groups could face different-strength
-  opposition. An alternative would be seeding 1-4 by group winners and 5-8
-  by runners-up instead of pure points.
+- **Playoff seeding uses raw season point totals across all 16 players**
+  (`playoffs.py: seed_playoffs`), even though players faced
+  different-strength opposition each month.
 - **Seeds {1,2,7,8} race as one 4-player free-for-all**, best 2 of the 4
   advance — same format as every other match in the league (confirmed;
   not two separate 1-on-1 races).

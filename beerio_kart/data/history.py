@@ -1,12 +1,12 @@
 """Real historical league results, transcribed from the league's Google
 Sheet (season standings + weekly group breakdowns).
 
-That sheet's actual structure differs from the placeholder 16-player / 4
-fixed-group setup in ``roster.py``: it has 12 recurring drivers split into
-3 groups of 4 that get *reshuffled every week*, rather than 4 groups that
-stay fixed all season. This module only exists to feed real results into
+This module only exists to feed real results into
 ``calibrate.fit_plackett_luce`` for skill estimation -- it is not read by
-the season simulator itself.
+the season simulator itself (that runs off ``data/schedule.py`` and
+``config/players_calibrated.yaml`` instead). Season 1's groups reshuffled
+every week among 12 recurring drivers; season 2 (16 drivers) reshuffles
+every month instead -- see ``data/schedule.py``.
 
 A few rows needed a judgment call while transcribing:
 
@@ -47,14 +47,12 @@ provided directly by the user rather than pulled from the sheet:
   new drivers (Christian, Harrison, Cailin, Ivan) added to the returning
   core.
 
-Group D (Will, Stu, Maclane, Luke) completes the 16-player/4-group
-target structure. Maclane and Luke have no race history -- they've never
-appeared in a tracked group -- so the Plackett-Luce fit has nothing to
-estimate their skill from. Per the league's own read on them ("probably
-somewhere between Ivan and Cailin"), ``MANUAL_SKILL_ESTIMATES`` overrides
-their skill directly rather than leaving them out or defaulting them to
-the field average; ``build_roster_from_history.py`` applies it after the
-fit. Replace it with a real rating as soon as they've actually raced.
+Will, Stu, Maclane, and Luke complete the 16-player roster (see
+``data/schedule.py``: ``SEASON_2_SCHEDULE``). Maclane and Luke never
+appeared in a tracked race, so the Plackett-Luce fit alone has nothing to
+estimate their skill from -- ``SEASON_2_EXPERT_RANKING`` (the league's own
+full-roster ranking) is what gives them a real fitted skill instead of a
+flat guess, the same as everyone else.
 """
 from __future__ import annotations
 
@@ -88,26 +86,45 @@ SEASON_2_WEEK_1_RESULTS: list[list[str]] = [
     ["Isaiah", "Harrison", "Cailin", "Ivan"],
 ]
 
+# The league's own full-field ranking of all 16 current players, given
+# directly rather than pulled from a race. Fed into the same
+# Plackett-Luce fit as an extra ranking event (best to worst) instead of
+# being applied as separate hand-tuned overrides -- one full 16-player
+# ranking is far more information-dense than any single 4-player race (15
+# pairwise "stages" instead of 3), which is why a moderate weight on it
+# goes a long way. This is also what lets Maclane and Luke -- no race
+# history at all -- get a real fitted skill instead of a flat manual
+# guess: they now appear in a ranking event like everyone else.
+SEASON_2_EXPERT_RANKING: list[str] = [
+    "Kannon", "Jack", "Sam", "Will", "Stu", "Isaiah", "Jackson", "Christian",
+    "Max", "Harrison", "Peter", "Jorgen", "Cailin", "Maclane", "Luke", "Ivan",
+]
+
 # Every ranking event available, in chronological order -- what
 # build_roster_from_history.py fits skills against by default.
 ALL_RANKING_EVENTS: list[list[str]] = (
-    SEASON_1_WEEKLY_RESULTS + SEASON_1_PLAYOFF_RESULTS + SEASON_2_WEEK_1_RESULTS
+    SEASON_1_WEEKLY_RESULTS
+    + SEASON_1_PLAYOFF_RESULTS
+    + SEASON_2_WEEK_1_RESULTS
+    + [SEASON_2_EXPERT_RANKING]
 )
 
-# Recency weight per event above (same order, same length) -- how much
-# each ranking counts in the Plackett-Luce fit. Season 1 results get the
-# baseline weight; season 2 results count 3x as much, so a driver who's
-# recently improved (the league's read: Sam and Max) shows it in their
-# fitted skill instead of that recent form being diluted evenly across
-# their whole history. Tune SEASON_2_RECENCY_WEIGHT down over the course
-# of the season as season 2 stops being "recent" and becomes most of the
-# sample on its own.
+# Recency/confidence weight per event above (same order, same length) --
+# how much each ranking counts in the Plackett-Luce fit. Season 1 results
+# get the baseline weight; season 2 results and the league's own ranking
+# both count 6x as much ("heavily weight this season versus last"), so
+# recent play and the league's own read dominate the fit while real
+# point margins still shape the exact skill gaps within that order. Tune
+# these down over the course of the season as season 2 stops being
+# "recent" and becomes most of the sample on its own.
 SEASON_1_RECENCY_WEIGHT = 1.0
-SEASON_2_RECENCY_WEIGHT = 3.0
+SEASON_2_RECENCY_WEIGHT = 6.0
+EXPERT_RANKING_WEIGHT = 6.0
 ALL_RANKING_WEIGHTS: list[float] = (
     [SEASON_1_RECENCY_WEIGHT] * len(SEASON_1_WEEKLY_RESULTS)
     + [SEASON_1_RECENCY_WEIGHT] * len(SEASON_1_PLAYOFF_RESULTS)
     + [SEASON_2_RECENCY_WEIGHT] * len(SEASON_2_WEEK_1_RESULTS)
+    + [EXPERT_RANKING_WEIGHT]
 )
 
 # Ids that showed up in the results above but aren't recurring league
@@ -132,35 +149,16 @@ SEASON_TOTALS_THROUGH_WEEK_3: dict[str, int] = {
     "Jorgen": 299,
 }
 
-# This season's groups, now complete at 4 groups of 4.
-SEASON_2_GROUPS: dict[str, list[str]] = {
-    "A": ["Kannon", "Jack", "Christian", "Peter"],
-    "B": ["Sam", "Jackson", "Max", "Jorgen"],
-    "C": ["Isaiah", "Harrison", "Cailin", "Ivan"],
-    "D": ["Will", "Stu", "Maclane", "Luke"],
-}
+# Skill overrides for drivers with no race history to fit from at all --
+# left empty now that SEASON_2_EXPERT_RANKING covers every current
+# player (Maclane and Luke included), which is a better source for this
+# than a flat guess. Keep the mechanism for the next genuinely
+# history-less player who joins before the league's ranking is updated.
+MANUAL_SKILL_ESTIMATES: dict[str, float] = {}
 
-# Skill overrides for drivers with no race history to fit from -- see the
-# module docstring. Applied on top of the Plackett-Luce fit, not blended
-# with it.
-MANUAL_SKILL_ESTIMATES: dict[str, float] = {
-    "Maclane": 826.0,  # midpoint of fitted Ivan/Cailin skill
-    "Luke": 826.0,  # midpoint of fitted Ivan/Cailin skill
-}
-
-# Multiplicative "current form" adjustments for drivers *with* history
-# whose real skill has moved beyond what the fit alone captures.
-#
-# Sam's one season-2 result was an outright win, and SEASON_2_RECENCY_WEIGHT
-# already pulls his fitted skill up a lot on its own (~816 -> ~1019) --
-# no override needed. Max's one season-2 result was a modest 3rd of 4, not
-# a win, so recency weighting barely moves him (~407 -> ~375) even though
-# the league's read is that he's "improved drastically." That gap between
-# "what 1 modest result implies" and "what the league actually believes"
-# is exactly what this override is for -- it's a judgment call, not a fit
-# from data, so tune the multiplier directly (or add more of his season-2
-# results to SEASON_2_WEEK_1_RESULTS/a new week block so the fit can pick
-# it up on its own) as better evidence shows up.
-FORM_ADJUSTMENTS: dict[str, float] = {
-    "Max": 2.2,  # ~375 -> ~825: roughly Ivan/Cailin territory, no longer last
-}
+# Multiplicative "current form" adjustments for drivers whose real skill
+# has moved beyond what the weighted fit alone captures. Left empty now
+# that SEASON_2_EXPERT_RANKING (which explicitly placed Max above
+# Harrison, Peter, and Jorgen) supersedes the old one-off Max multiplier
+# -- keep the mechanism for a future case the ranking doesn't cover.
+FORM_ADJUSTMENTS: dict[str, float] = {}

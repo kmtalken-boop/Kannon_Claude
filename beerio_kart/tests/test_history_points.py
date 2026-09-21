@@ -5,11 +5,18 @@ from beerio_kart.data.history_points import ALL_EVENTS_WITH_POINTS
 
 
 class TestHistoryPointsConsistency(unittest.TestCase):
-    def test_same_number_of_events(self):
-        self.assertEqual(len(ALL_EVENTS_WITH_POINTS), len(ALL_RANKING_EVENTS))
+    """ALL_RANKING_EVENTS (used for the Plackett-Luce fit) can hold events
+    with no real points behind them, like the league's own full-roster
+    ranking -- those are appended after the real, point-scored races, so
+    this only checks the leading real-race prefix the two lists share.
+    """
+
+    def test_ranking_events_cover_at_least_the_real_races(self):
+        self.assertGreaterEqual(len(ALL_RANKING_EVENTS), len(ALL_EVENTS_WITH_POINTS))
 
     def test_player_order_matches_ranking_events(self):
-        for (label, results), ranking in zip(ALL_EVENTS_WITH_POINTS, ALL_RANKING_EVENTS):
+        real_race_rankings = ALL_RANKING_EVENTS[: len(ALL_EVENTS_WITH_POINTS)]
+        for (label, results), ranking in zip(ALL_EVENTS_WITH_POINTS, real_race_rankings):
             self.assertEqual(
                 [pid for pid, _points in results],
                 ranking,

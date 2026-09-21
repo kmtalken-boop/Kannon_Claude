@@ -1,19 +1,18 @@
 """Playoff bracket.
 
-The top 2 finishers from each of the 4 groups (8 players total) qualify
-and are seeded 1-8 by total league points, compared directly across
-groups. Seeds {1, 2, 7, 8} form one 4-player playoff group and seeds
-{3, 4, 5, 6} form the other ("3-6 play each other in a semifinal"). Each
-group plays one fresh 32-race match (its own new 8-beer-per-player
-schedule); the top 2 finishers from each of those two matches (4 players
-total) advance to a single winner-take-all final match.
+The top 8 of all 16 players by total season points qualify, seeded 1-8
+directly by that total (there's no group standings step -- see
+``league.py``). Seeds {1, 2, 7, 8} form one 4-player playoff group and
+seeds {3, 4, 5, 6} form the other ("3-6 play each other in a semifinal").
+Each group plays one fresh 32-race match; the top 2 finishers from each
+of those two matches (4 players total) advance to a single
+winner-take-all final match.
 """
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from .league import GroupResult
 from .match import MatchConfig, MatchResult, simulate_match
 from .models import Player
 
@@ -28,30 +27,23 @@ class PlayoffResult:
     champion: str
 
 
-def seed_playoffs(
-    group_results: dict[str, GroupResult], rng: random.Random
-) -> list[str]:
-    """Return the 8 qualifiers ordered by seed (1 first)."""
-    qualifiers: list[str] = []
-    points_lookup: dict[str, int] = {}
-    for group in group_results.values():
-        qualifiers.extend(group.standings()[:2])
-        points_lookup.update(group.season_points)
-
+def seed_playoffs(season_points: dict[str, int], rng: random.Random) -> list[str]:
+    """Return the top 8 player ids ordered by seed (1 first)."""
+    ids = list(season_points)
     # Shuffle first so that exact point ties break randomly rather than by
     # insertion order (Python's sort is stable).
-    rng.shuffle(qualifiers)
-    qualifiers.sort(key=lambda pid: -points_lookup[pid])
-    return qualifiers
+    rng.shuffle(ids)
+    ids.sort(key=lambda pid: -season_points[pid])
+    return ids[:8]
 
 
 def run_playoffs(
-    group_results: dict[str, GroupResult],
+    season_points: dict[str, int],
     players_by_id: dict[str, Player],
     config: MatchConfig,
     rng: random.Random,
 ) -> PlayoffResult:
-    seeds = seed_playoffs(group_results, rng)
+    seeds = seed_playoffs(season_points, rng)
     top_group_ids = [seeds[0], seeds[1], seeds[6], seeds[7]]
     bottom_group_ids = [seeds[2], seeds[3], seeds[4], seeds[5]]
 
