@@ -1,33 +1,43 @@
 # Skill ratings fit from real historical results via a Plackett-Luce
 # MLE (see calibrate.py + build_roster_from_history.py), placed into
-# this season's real groups (data/history.py: SEASON_2_GROUPS). Group D
-# is still missing -- this league needs 16 players across 4 groups of 4,
-# and only 3 groups (12 players) have been confirmed for this season.
+# this season's real groups (data/history.py: SEASON_2_GROUPS). Maclane
+# and Luke have no race history yet, so their skill is a manual estimate
+# (data/history.py: MANUAL_SKILL_ESTIMATES) -- replace it once they've
+# actually raced.
 groups:
   A:
   - name: Kannon
-    skill: 2175.8
+    skill: 2175.3
   - name: Jack
-    skill: 1607.3
+    skill: 1607.1
   - name: Christian
-    skill: 936.4
+    skill: 936.2
   - name: Peter
-    skill: 416.6
+    skill: 415.3
   B:
   - name: Sam
-    skill: 816.8
+    skill: 816.5
   - name: Jackson
-    skill: 793.8
+    skill: 826.5
   - name: Max
-    skill: 410.5
+    skill: 407.1
   - name: Jorgen
-    skill: 479.1
+    skill: 470.0
   C:
   - name: Isaiah
-    skill: 967.2
+    skill: 961.2
   - name: Harrison
-    skill: 1101.3
+    skill: 1101.2
   - name: Cailin
-    skill: 944.0
+    skill: 943.9
   - name: Ivan
-    skill: 708.0
+    skill: 707.9
+  D:
+  - name: Will
+    skill: 1124.1
+  - name: Stu
+    skill: 1166.3
+  - name: Maclane
+    skill: 826.0
+  - name: Luke
+    skill: 826.0

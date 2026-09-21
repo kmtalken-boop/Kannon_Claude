@@ -4,46 +4,46 @@
 
 Reads ``data/history.py`` (season 1's weekly results and playoffs, plus
 season 2's first week), fits Plackett-Luce strengths across all of it with
-``calibrate.fit_plackett_luce``, and writes
-``config/players_calibrated.yaml``.
-
-This season's real group assignments (``SEASON_2_GROUPS``) are used
-directly for the 3 groups known so far, rather than re-drafting players
-into artificial balanced groups -- group assignment is the league's call,
-not this script's. The league's target structure is 16 players in 4 fixed
-groups of 4; only 12 players/3 groups have been provided for this season,
-so the YAML this writes is one group short until group D is known (for
-players who aren't in ``SEASON_2_GROUPS`` at all -- e.g. anyone who played
-last season but isn't confirmed for this one -- their fitted skill is
-still printed below for reference, in case they end up in group D).
+``calibrate.fit_plackett_luce``, layers on ``MANUAL_SKILL_ESTIMATES`` for
+drivers with no race history yet, and writes
+``config/players_calibrated.yaml`` using this season's real 4x4 group
+assignments (``SEASON_2_GROUPS``) -- group assignment is the league's
+call, not this script's, so it's never re-drafted or rebalanced here.
 """
 from __future__ import annotations
 
 import yaml
 
 from .calibrate import fit_plackett_luce, strengths_to_skill
-from .data.history import ALL_RANKING_EVENTS, SEASON_2_GROUPS, SUBSTITUTE_IDS
+from .data.history import (
+    ALL_RANKING_EVENTS,
+    MANUAL_SKILL_ESTIMATES,
+    SEASON_2_GROUPS,
+    SUBSTITUTE_IDS,
+)
 
 
 def build_calibrated_skills() -> dict[str, float]:
     strengths = fit_plackett_luce(ALL_RANKING_EVENTS)
     skills = strengths_to_skill(strengths)
-    return {pid: skill for pid, skill in skills.items() if pid not in SUBSTITUTE_IDS}
+    skills = {pid: skill for pid, skill in skills.items() if pid not in SUBSTITUTE_IDS}
+    skills.update(MANUAL_SKILL_ESTIMATES)
+    return skills
 
 
 def main() -> None:
     skills = build_calibrated_skills()
+    rostered = {pid for members in SEASON_2_GROUPS.values() for pid in members}
 
-    print("Calibrated skill ratings (Plackett-Luce fit over all history, mean = 1000):")
+    print("Calibrated skill ratings (Plackett-Luce fit + manual estimates, mean ~1000):")
     for pid in sorted(skills, key=lambda p: -skills[p]):
-        print(f"  {pid:<10} skill={skills[pid]:>7.1f}")
+        tag = "" if pid in rostered else "  (not in a season-2 group)"
+        source = " *manual*" if pid in MANUAL_SKILL_ESTIMATES else ""
+        print(f"  {pid:<10} skill={skills[pid]:>7.1f}{source}{tag}")
 
-    assigned = {pid for members in SEASON_2_GROUPS.values() for pid in members}
-    unassigned = sorted((skills[pid], pid) for pid in skills if pid not in assigned)
-    if unassigned:
-        print("\nNot in a season-2 group yet (candidates for group D):")
-        for skill, pid in reversed(unassigned):
-            print(f"  {pid:<10} skill={skill:>7.1f}")
+    missing = [pid for members in SEASON_2_GROUPS.values() for pid in members if pid not in skills]
+    if missing:
+        raise SystemExit(f"No skill available for rostered player(s): {missing}")
 
     groups = {
         name: [{"name": pid, "skill": round(skills[pid], 1)} for pid in members]
@@ -54,9 +54,10 @@ def main() -> None:
         f.write(
             "# Skill ratings fit from real historical results via a Plackett-Luce\n"
             "# MLE (see calibrate.py + build_roster_from_history.py), placed into\n"
-            "# this season's real groups (data/history.py: SEASON_2_GROUPS). Group D\n"
-            "# is still missing -- this league needs 16 players across 4 groups of 4,\n"
-            "# and only 3 groups (12 players) have been confirmed for this season.\n"
+            "# this season's real groups (data/history.py: SEASON_2_GROUPS). Maclane\n"
+            "# and Luke have no race history yet, so their skill is a manual estimate\n"
+            "# (data/history.py: MANUAL_SKILL_ESTIMATES) -- replace it once they've\n"
+            "# actually raced.\n"
         )
         yaml.dump({"groups": groups}, f, sort_keys=False)
 
