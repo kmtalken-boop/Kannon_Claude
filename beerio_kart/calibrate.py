@@ -15,7 +15,7 @@ def fit_plackett_luce(
     rankings: list[list[str]],
     weights: list[float] | None = None,
     iterations: int = 300,
-    ridge: float = 3.0,
+    ridge: float = 8.0,
 ) -> dict[str, float]:
     """Fit multiplicative Plackett-Luce strengths from historical rankings.
 
@@ -39,13 +39,18 @@ def fit_plackett_luce(
     ``ridge`` is a Bayesian pseudo-count added to every player's
     win/exposure tally so that a player with very few results doesn't
     drift to 0 or infinity -- it pulls thin-sample players back toward
-    the field average until more data arrives. The default of 3.0 is
-    deliberately on the same order as a handful of weeks of real results:
-    with only 2-3 games per player, an early undefeated record shouldn't
-    be read as near-certain dominance, so the prior is strong enough to
-    meaningfully soften it. It should shrink automatically as more
-    history accumulates -- if you tune it, tune it down as the season's
-    real sample size grows.
+    the field average until more data arrives. The default of 8.0 was
+    raised from an earlier 3.0 once ``data/history.py`` started mixing in
+    high-weight full-roster rankings (the league's own preseason ranking,
+    and now a real in-season points-per-game ranking): those are
+    information-dense enough that a lighter ridge let skill ratios blow
+    out to the thousands-to-one range (e.g. Kannon vs. the weakest
+    rostered player), which understated real race-to-race variance for
+    *everyone* and made marginal playoff races look far more certain than
+    they should -- a borderline 8th-place finisher showed 100% odds to
+    make it when the honest number was closer to 75%. Tune it down as
+    real per-player sample sizes grow and those full-roster rankings stop
+    carrying most of the weight on their own.
     """
     players = sorted({p for ranking in rankings for p in ranking})
     if not players:
