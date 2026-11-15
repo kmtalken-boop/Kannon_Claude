@@ -5,37 +5,37 @@
 # monthly rotation (data/schedule.py: SEASON_2_SCHEDULE).
 players:
 - name: Kannon
-  skill: 4170.8
+  skill: 5526.5
 - name: Peter
-  skill: 172.2
+  skill: 132.4
 - name: Christian
-  skill: 620.1
+  skill: 169.4
 - name: Jack
-  skill: 2517.0
+  skill: 2539.1
 - name: Sam
-  skill: 1882.1
+  skill: 1361.0
 - name: Max
-  skill: 337.0
+  skill: 250.5
 - name: Jorgen
-  skill: 115.1
+  skill: 20.3
 - name: Jackson
-  skill: 825.7
+  skill: 731.2
 - name: Isaiah
-  skill: 1168.6
+  skill: 1365.9
 - name: Cailin
-  skill: 82.9
+  skill: 30.9
 - name: Harrison
-  skill: 335.1
+  skill: 89.5
 - name: Ivan
-  skill: 6.9
+  skill: 2.1
 - name: Luke
-  skill: 25.9
+  skill: 6.2
 - name: Maclane
-  skill: 54.6
+  skill: 0.8
 - name: Will
-  skill: 1649.8
+  skill: 2603.4
 - name: Stu
-  skill: 1455.0
+  skill: 699.3
 schedule:
   September:
     Group 1:

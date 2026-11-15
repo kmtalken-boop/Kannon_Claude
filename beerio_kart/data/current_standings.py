@@ -49,3 +49,18 @@ REMAINING_FIXTURES: list[tuple[str, list[str]]] = [
     ("November Group 1", ["Kannon", "Jackson", "Harrison", "Maclane"]),
     ("November Group 4", ["Jack", "Jorgen", "Cailin", "Luke"]),
 ]
+
+# All 16 players ranked by this season's real points-per-game (not raw
+# total, which would unfairly reward/punish players for how many games
+# they've happened to play so far). Fed into the Plackett-Luce fit
+# (calibrate.py via data/history.py) as a ranking event in its own right,
+# alongside the older SEASON_2_EXPERT_RANKING -- this is what lets actual
+# in-season form (e.g. Isaiah leading the league in points, well ahead of
+# where the preseason expert ranking placed him relative to Sam) pull a
+# player's fitted skill toward what they're actually doing now, rather
+# than staying anchored to a snapshot taken before most of these games
+# were played.
+SEASON_2_CURRENT_FORM_RANKING: list[str] = sorted(
+    CURRENT_STANDINGS, key=lambda name: -(CURRENT_STANDINGS[name][1] / CURRENT_STANDINGS[name][0])
+)
+

@@ -56,6 +56,8 @@ flat guess, the same as everyone else.
 """
 from __future__ import annotations
 
+from .current_standings import SEASON_2_CURRENT_FORM_RANKING
+
 # Each entry: one race group's results for one week, ordered best (most
 # points) to worst. This is exactly the "ranking" format
 # calibrate.fit_plackett_luce expects.
@@ -106,25 +108,31 @@ ALL_RANKING_EVENTS: list[list[str]] = (
     SEASON_1_WEEKLY_RESULTS
     + SEASON_1_PLAYOFF_RESULTS
     + SEASON_2_WEEK_1_RESULTS
-    + [SEASON_2_EXPERT_RANKING]
+    + [SEASON_2_EXPERT_RANKING, SEASON_2_CURRENT_FORM_RANKING]
 )
 
 # Recency/confidence weight per event above (same order, same length) --
 # how much each ranking counts in the Plackett-Luce fit. Season 1 results
-# get the baseline weight; season 2 results and the league's own ranking
-# both count 6x as much ("heavily weight this season versus last"), so
-# recent play and the league's own read dominate the fit while real
-# point margins still shape the exact skill gaps within that order. Tune
-# these down over the course of the season as season 2 stops being
-# "recent" and becomes most of the sample on its own.
+# get the baseline weight; season 2 race results count 6x as much
+# ("heavily weight this season versus last"). The league's own
+# SEASON_2_EXPERT_RANKING was a snapshot taken before most of season 2
+# had been played, so its weight has been pulled back down from an
+# earlier 6.0 as real in-season results (SEASON_2_CURRENT_FORM_RANKING,
+# points-per-game across all real season-2 games so far) take over as
+# the stronger, more current signal -- that's what fixed Isaiah rating
+# below Sam despite leading the league in points: the preseason ranking
+# alone couldn't see this season's actual form. Keep shifting weight from
+# EXPERT_RANKING_WEIGHT to CURRENT_FORM_WEIGHT as the season progresses
+# and the preseason read becomes fully obsolete.
 SEASON_1_RECENCY_WEIGHT = 1.0
 SEASON_2_RECENCY_WEIGHT = 6.0
-EXPERT_RANKING_WEIGHT = 6.0
+EXPERT_RANKING_WEIGHT = 2.5
+CURRENT_FORM_WEIGHT = 12.0
 ALL_RANKING_WEIGHTS: list[float] = (
     [SEASON_1_RECENCY_WEIGHT] * len(SEASON_1_WEEKLY_RESULTS)
     + [SEASON_1_RECENCY_WEIGHT] * len(SEASON_1_PLAYOFF_RESULTS)
     + [SEASON_2_RECENCY_WEIGHT] * len(SEASON_2_WEEK_1_RESULTS)
-    + [EXPERT_RANKING_WEIGHT]
+    + [EXPERT_RANKING_WEIGHT, CURRENT_FORM_WEIGHT]
 )
 
 # Ids that showed up in the results above but aren't recurring league
