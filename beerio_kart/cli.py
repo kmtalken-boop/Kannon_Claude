@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import random
 
+from .current_projection import ProjectedStats, run_current_projection
 from .data.schedule import SEASON_2_KNOWN_RESULTS
 from .match import MatchConfig
 from .matchup import estimate_matchup
@@ -27,6 +28,18 @@ def format_table(stats: dict[str, PlayerStats]) -> str:
     for r in rows:
         lines.append(
             f"{r['name']:<12}{r['avg_points']:>9.1f}"
+            f"{r['playoff_pct']:>10.1f}%{r['finals_pct']:>8.1f}%{r['champion_pct']:>7.1f}%"
+        )
+    return "\n".join(lines)
+
+
+def format_current_projection(stats: dict[str, ProjectedStats]) -> str:
+    rows = sorted((s.as_row() for s in stats.values()), key=lambda r: -r["champion_pct"])
+    header = f"{'Player':<12}{'Banked':>8}{'Proj Final':>12}{'Playoffs%':>11}{'Finals%':>9}{'Champ%':>8}"
+    lines = [header, "-" * len(header)]
+    for r in rows:
+        lines.append(
+            f"{r['name']:<12}{r['banked_points']:>8}{r['avg_final_points']:>12.1f}"
             f"{r['playoff_pct']:>10.1f}%{r['finals_pct']:>8.1f}%{r['champion_pct']:>7.1f}%"
         )
     return "\n".join(lines)
@@ -120,6 +133,12 @@ def main() -> None:
     parser.add_argument(
         "--matchup-trials", type=int, default=300, help="simulated matches to average for --matchup"
     )
+    parser.add_argument(
+        "--current-projection",
+        action="store_true",
+        help="project the rest of THIS season from the real current standings (data/current_standings.py)"
+        " instead of simulating a season from scratch",
+    )
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -135,6 +154,13 @@ def main() -> None:
 
     if args.matchup:
         run_matchup(args.matchup, players, config, args.matchup_trials, rng)
+        return
+
+    if args.current_projection:
+        players_by_name = {p.name: p for p in players}
+        stats = run_current_projection(players_by_name, config, args.sims, rng)
+        print(f"Projected rest of season from real current standings ({args.sims} sims)\n")
+        print(format_current_projection(stats))
         return
 
     if args.verbose:

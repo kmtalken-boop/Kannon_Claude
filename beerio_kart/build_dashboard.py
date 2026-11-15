@@ -5,10 +5,14 @@
 Writes ``beerio_kart/dashboard/Beerio_Kart_Dashboard.xlsx`` with:
 
 - **Overview**: how the model works, how to use the workbook.
+- **CurrentStandings**: real points banked so far this season plus a
+  playoff projection that only simulates the matches nobody's played yet.
 - **Roster**: every player's skill breakdown (fitted / adjustment /
   effective), with two live-editable input columns.
 - **ResultsLog**: every historical race result, as a filterable table.
-- **PlayoffOdds**: the Monte Carlo championship-odds table + chart.
+- **PlayoffOdds**: a hypothetical full season simulated from scratch
+  (championship-odds table + chart) -- see CurrentStandings for the real
+  current state instead.
 - **SeasonSnapshot**: one full illustrative simulated season.
 - **PlayerDetail**: pick a player from a dropdown, see their summary
   stats and full chronological result history + trend chart.
@@ -35,6 +39,8 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from .build_roster_from_history import build_skill_breakdown
+from .current_projection import run_current_projection
+from .data.current_standings import CURRENT_STANDINGS, REMAINING_FIXTURES, STANDINGS_AS_OF
 from .data.history_points import (
     SEASON_1_PLAYOFF_POINTS,
     SEASON_1_WEEKLY_POINTS,
@@ -53,6 +59,8 @@ MC_SEED = 42
 SNAPSHOT_SEED = 7
 MATCHUP_TRIALS = 200
 MATCHUP_SEED = 99
+CURRENT_PROJECTION_SIMS = 20000
+CURRENT_PROJECTION_SEED = 7
 OUT_PATH = "beerio_kart/dashboard/Beerio_Kart_Dashboard.xlsx"
 ROSTER_YAML = "beerio_kart/config/players_calibrated.yaml"
 
@@ -186,6 +194,9 @@ def build_overview(wb, generated_at):
         "PlayoffOdds and SeasonSnapshot are a SNAPSHOT from one specific Python run (see sims/seed"
         " above) -- Excel can't re-run the Monte Carlo simulator itself. After changing Roster inputs,"
         " ask for the model to be re-run to refresh these tabs.",
+        "CurrentStandings is different from PlayoffOdds: it starts from the real recorded points this"
+        " season (not a hypothetical from-scratch season) and only simulates the matches nobody has"
+        " played yet -- this is the one to read for \"what are our actual playoff chances right now.\"",
         "ResultsLog is a plain filterable table (click the column header arrows) of every real result"
         " behind the skill ratings.",
         "PlayerDetail: pick a player from the dropdown in cell B2 to see their summary stats and their"
@@ -283,6 +294,85 @@ def build_results_log_sheet(wb):
     return last_row
 
 
+def build_current_standings_sheet(wb, projection_stats):
+    ws = wb.create_sheet("CurrentStandings")
+    autosize(ws, [12, 10, 10, 13, 28, 12, 10, 10])
+
+    cell(ws, 1, 1, "Current Standings & Playoff Projection", font=TITLE_FONT, border=False)
+    cell(
+        ws, 2, 1,
+        f"As of {STANDINGS_AS_OF}. Banked points are real recorded results; projections simulate"
+        " only the matches nobody has played yet (see the Remaining column) and re-run the playoff"
+        f" bracket from there, over {CURRENT_PROJECTION_SIMS:,} simulated continuations.",
+        font=Font(name=FONT_NAME, italic=True, size=10), border=False,
+    )
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=8)
+    ws.cell(row=2, column=1).alignment = Alignment(wrap_text=True)
+    ws.row_dimensions[2].height = 30
+
+    remaining_by_player: dict[str, list[str]] = {name: [] for name in CURRENT_STANDINGS}
+    for label, names in REMAINING_FIXTURES:
+        for name in names:
+            remaining_by_player[name].append(label)
+
+    headers = [
+        "Player", "Games Played", "Banked Points", "Remaining",
+        "Projected Final", "Playoff %", "Finals %", "Championship %",
+    ]
+    header_row(ws, 4, headers)
+
+    ranked = sorted(projection_stats.items(), key=lambda kv: -kv[1].championships)
+    row = 5
+    for name, s in ranked:
+        r = s.as_row()
+        games_played, _banked = CURRENT_STANDINGS[name]
+        cell(ws, row, 1, name, font=BOLD_BODY_FONT)
+        cell(ws, row, 2, games_played, fmt="0")
+        cell(ws, row, 3, r["banked_points"], fmt="#,##0")
+        cell(ws, row, 4, "; ".join(remaining_by_player[name]) or "Done")
+        cell(ws, row, 5, r["avg_final_points"], fmt="#,##0.0")
+        cell(ws, row, 6, r["playoff_pct"] / 100.0, fmt="0.0%")
+        cell(ws, row, 7, r["finals_pct"] / 100.0, fmt="0.0%")
+        cell(ws, row, 8, r["champion_pct"] / 100.0, fmt="0.0%")
+        row += 1
+    last_row = row - 1
+    make_table(ws, "CurrentStandingsTable", f"A4:H{last_row}")
+
+    for col in ("F", "G", "H"):
+        ws.conditional_formatting.add(
+            f"{col}5:{col}{last_row}",
+            DataBarRule(start_type="num", start_value=0, end_type="num", end_value=1, color="638EC6"),
+        )
+
+    note_row = last_row + 2
+    cell(
+        ws, note_row, 1,
+        "Remaining fixtures (nobody in them has played yet): "
+        + "; ".join(f"{label} ({', '.join(names)})" for label, names in REMAINING_FIXTURES)
+        + ". A few other pods already happened with a substitute standing in for one regular (same"
+        " pattern as season 1's subs) -- that regular's own games-played/points stayed put, but the"
+        " pod isn't open to re-simulate. Update data/current_standings.py and rerun"
+        " `python3 -m beerio_kart.build_dashboard` as results come in.",
+        border=False,
+    )
+    ws.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=8)
+    ws.cell(row=note_row, column=1).alignment = Alignment(wrap_text=True)
+    ws.row_dimensions[note_row].height = 45
+
+    chart = BarChart()
+    chart.title = "Championship odds (current projection)"
+    chart.y_axis.title = "Championship %"
+    chart.y_axis.numFmt = "0%"
+    chart.style = 10
+    data = Reference(ws, min_col=8, min_row=4, max_row=last_row)
+    cats = Reference(ws, min_col=1, min_row=5, max_row=last_row)
+    chart.add_data(data, titles_from_data=True)
+    chart.set_categories(cats)
+    chart.width = 24
+    chart.height = 12
+    ws.add_chart(chart, "J4")
+
+
 def build_playoff_odds_sheet(wb, mc_stats):
     ws = wb.create_sheet("PlayoffOdds")
     headers = ["Player", "Effective Skill", "Avg Season Points (sim)", "Playoff %", "Finals %", "Championship %"]
@@ -312,8 +402,9 @@ def build_playoff_odds_sheet(wb, mc_stats):
     note_row = last_row + 2
     cell(
         ws, note_row, 1,
-        f"Monte Carlo snapshot: {SIMS:,} simulated seasons, seed={MC_SEED}, using"
-        f" config/players_calibrated.yaml as generated. Rerun"
+        f"Hypothetical from-scratch season: {SIMS:,} full seasons simulated starting from September,"
+        f" seed={MC_SEED}, using config/players_calibrated.yaml as generated -- for the actual current"
+        " standings and playoff chances, see the CurrentStandings tab instead. Rerun"
         f" `python3 -m beerio_kart.cli --config {ROSTER_YAML} --sims {SIMS} --seed {MC_SEED}`"
         " to refresh after changing skills.",
         border=False,
@@ -676,6 +767,10 @@ def main() -> None:
     )
     mc_stats = {s.name: s for s in mc_stats.values()}
 
+    players_by_name = {p.name: p for p in players}
+    projection_rng = random.Random(CURRENT_PROJECTION_SEED)
+    projection_stats = run_current_projection(players_by_name, config, CURRENT_PROJECTION_SIMS, projection_rng)
+
     snapshot_rng = random.Random(SNAPSHOT_SEED)
     season_result = run_season(schedule, config, snapshot_rng, known_results=SEASON_2_KNOWN_RESULTS)
 
@@ -686,6 +781,7 @@ def main() -> None:
 
     wb = Workbook()
     build_overview(wb, generated_at)
+    build_current_standings_sheet(wb, projection_stats)
     build_roster_sheet(wb, breakdown, effective_by_id, results_last_row)
     build_results_log_sheet(wb)
     build_playoff_odds_sheet(wb, mc_stats)
