@@ -4,23 +4,18 @@
 Unlike ``SEASON_2_KNOWN_RESULTS`` (per-match points for specific pods),
 this is each player's *cumulative* season total plus how many of their 3
 scheduled matches they've personally played. Games-played isn't uniform
-across players because pods complete at different paces, and a few
-pods clearly ran with a substitute standing in for an absent regular
-(the same pattern as "Zynny"/"Jack (sub)" in season 1's history) -- the
-substitute's result still counts for their groupmates' totals, but not
-for the absent player's own personal count or total.
-
-Reconciling GAMES_PLAYED against the schedule (``SEASON_2_SCHEDULE``) pod
-by pod -- a pod counts as "played" once any of its members' personal game
-count has advanced past it -- identifies exactly which pods are still
-genuinely unplayed by everyone in them (``REMAINING_FIXTURES``) versus
-already resolved via a substitute for whichever member's own count didn't
-move (Will's November and Stu's November; Maclane's and Luke's October).
-This fully reconciles: every player's (3 - games_played) gap is either
-explained by a still-open fixture below, or by exactly one such
-sub-covered round that won't recur. If more results come in, this file
-is what to update -- move points from REMAINING_FIXTURES's resolution
-into CURRENT_STANDINGS and drop the now-played pod from the list.
+across players because pods complete at different paces: Will's banked
+390 is actually his *November* result (he hadn't played September or
+October yet, despite being on the original September Group 4 roster),
+and Stu's 581 is his October+November total with September still open --
+both confirmed directly by the user after an initial reconciliation
+attempt (which assumed September Group 4 had already happened) came out
+wrong. With that fixed, every player's (3 - games_played) gap matches the
+number of pods below they still appear in exactly -- see
+tests/test_current_projection.py's reconciliation check. If more results
+come in, this file is what to update -- move points from
+REMAINING_FIXTURES's resolution into CURRENT_STANDINGS and drop the
+now-played pod from the list.
 """
 from __future__ import annotations
 
@@ -49,6 +44,7 @@ CURRENT_STANDINGS: dict[str, tuple[int, int]] = {
 # Pods nobody in them has played yet -- the only fixtures left to
 # project. (label, [4 player names])
 REMAINING_FIXTURES: list[tuple[str, list[str]]] = [
+    ("September Group 4", ["Luke", "Maclane", "Will", "Stu"]),
     ("October Group 3", ["Christian", "Jorgen", "Harrison", "Will"]),
     ("November Group 1", ["Kannon", "Jackson", "Harrison", "Maclane"]),
     ("November Group 4", ["Jack", "Jorgen", "Cailin", "Luke"]),

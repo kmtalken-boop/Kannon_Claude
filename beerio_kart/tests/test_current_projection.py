@@ -18,6 +18,21 @@ class TestCurrentProjection(unittest.TestCase):
             for name in names:
                 self.assertIn(name, self.players_by_name, f"{label}: unknown player {name}")
 
+    def test_remaining_fixture_count_matches_games_played_gap(self):
+        # Each player's (3 - games_played) should equal exactly how many
+        # of the remaining fixtures they appear in -- if not, either a
+        # real match is missing from REMAINING_FIXTURES or one listed
+        # there has actually already been played.
+        remaining_count = {name: 0 for name in CURRENT_STANDINGS}
+        for _label, names in REMAINING_FIXTURES:
+            for name in names:
+                remaining_count[name] += 1
+        for name, (games_played, _points) in CURRENT_STANDINGS.items():
+            self.assertEqual(
+                remaining_count[name], 3 - games_played,
+                f"{name}: played {games_played}/3 but appears in {remaining_count[name]} remaining fixtures",
+            )
+
     def test_final_points_are_at_least_banked_points(self):
         rng = random.Random(1)
         stats = run_current_projection(self.players_by_name, self.config, 20, rng)
